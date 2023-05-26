@@ -14,7 +14,7 @@ const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-camera.position.z = 25;
+camera.position.z = 50;
 
 const SCALE_FACTOR = 2.0;
 
@@ -35,17 +35,50 @@ let playerDef = {
 
 let player = world.createDynamicBody({
   position: Vec2(playerDef.x, playerDef.y),
+  fixedRotation: true,
 });
-player.createFixture({ shape: Box(playerDef.w, playerDef.h) });
+player.createFixture({ shape: Box(playerDef.w, playerDef.h), density: 1.0 });
 
 const playerGeo = new THREE.BoxGeometry(
   playerDef.w * 2,
   playerDef.h * 2,
-  playerDef.d
+  playerDef.d * 2
 );
 const playerMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
 const playerBox = new THREE.Mesh(playerGeo, playerMat);
 scene.add(playerBox);
+
+let hammerDef = {
+  w: 0.5,
+  h: 0.25,
+  d: 0.25,
+  x: -2,
+  y: 3,
+};
+
+let hammer = world.createDynamicBody({
+  position: Vec2(hammerDef.x, hammerDef.y),
+  gravityScale: 0,
+});
+hammer.createFixture({ shape: Box(hammerDef.w, hammerDef.h), density: 1.0 });
+
+const hammerGeo = new THREE.BoxGeometry(
+  hammerDef.w * 2,
+  hammerDef.h * 2,
+  hammerDef.d * 2
+);
+const hammerMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+const hammerBox = new THREE.Mesh(hammerGeo, hammerMat);
+scene.add(hammerBox);
+
+let joint = world.createJoint(
+  pl.RopeJoint({
+    bodyA: player,
+    bodyB: hammer,
+    collideConnected: false,
+    maxLength: 10,
+  })
+);
 
 let testBody = world.createDynamicBody({
   position: Vec2(1.8, 20.0),
@@ -71,7 +104,7 @@ ground.createFixture({
 });
 
 const groundGeo = new THREE.BoxGeometry(
-  groundDef.w,
+  groundDef.w * 2,
   groundDef.h * 2,
   groundDef.z
 );
@@ -82,6 +115,8 @@ scene.add(groundBox);
 // const groundPos = convertBox2DToThree(ground.getPosition());
 // groundBox.position.set(groundPos.x, groundPos.y, groundPos.z);
 
+let pos = new THREE.Vector3();
+
 // Render loop
 function animate() {
   requestAnimationFrame(animate);
@@ -90,27 +125,49 @@ function animate() {
   world.step(1 / 60);
 
   const playerPos = player.getPosition();
+  const playerAngle = player.getAngle();
   playerBox.position.set(playerPos.x, playerPos.y, playerBox.position.z);
+  playerBox.rotation.z = playerAngle;
 
   const testPos = testBody.getPosition();
-  const testAngleDegrees = testBody.getAngle();
+  const testAngle = testBody.getAngle();
   testBox.position.set(testPos.x, testPos.y, testBox.position.z);
-  testBox.rotation.z = testAngleDegrees;
+  testBox.rotation.z = testAngle;
+
+  const hammerPos = hammer.getPosition();
+  const hammerAngle = player.getAngle();
+  hammerBox.position.set(hammerPos.x, hammerPos.y, hammerBox.position.z);
+  hammerBox.rotation.z = hammerAngle;
+
+  // Directly setting position causes the body to ignore collisions. Do NOT use
+  // hammer.setPosition(Vec2(pos.x, pos.y));
+
+  let target = new Vec2(pos.x, pos.y);
+  hammer.setLinearVelocity(target.sub(hammer.getPosition()).mul(20));
 
   renderer.render(scene, camera);
 }
 
-window.onmouseup = function (e) {
-  let vector = new THREE.Vector3();
-  vector.set(
+window.onmousemove = function (e) {
+  let vec = new THREE.Vector3();
+  // let pos = new THREE.Vector3();
+
+  // Normalize screen coordinates between the range -1 to +1
+  vec.set(
     (e.clientX / window.innerWidth) * 2 - 1,
     -(e.clientY / window.innerHeight) * 2 + 1,
-    0
+    0.5
   );
-  vector.unproject(camera);
+  vec.unproject(camera);
+  vec.sub(camera.position).normalize();
 
-  console.log(vector);
+  let distance = -camera.position.z / vec.z;
+  pos.copy(camera.position).add(vec.multiplyScalar(distance));
+
+  console.log(vec);
 };
+
+window.onscroll = function (e) {};
 
 if (WebGL.isWebGLAvailable()) {
   // Initiate function or other initializations here
