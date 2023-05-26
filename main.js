@@ -25,6 +25,25 @@ let pl = planck,
 
 let world = pl.World({ gravity: Vec2(0.0, -10) });
 
+// Helper Function to create box
+function createBodyAndMesh(width, height, depth, xCor, yCor, color, type) {
+  const body = world.createBody({ position: Vec2(xCor, yCor), type });
+  body.createFixture({ shape: Box(width, height), density: 1.0 });
+
+  const geometry = new THREE.BoxGeometry(width * 2, height * 2, depth);
+  const material = new THREE.MeshBasicMaterial ({ color: color });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(xCor, yCor, 1.0);
+  scene.add(mesh);
+
+  const getPosition = () => {
+    const pos = body.getPosition();
+    return { x: pos.x, y: pos.y };
+  };
+
+  return { body, mesh, getPosition };
+}
+
 let playerDef = {
   w: 1.0,
   h: 2,
@@ -33,28 +52,8 @@ let playerDef = {
   y: 10.0,
 };
 
-let player = world.createDynamicBody({
-  position: Vec2(playerDef.x, playerDef.y),
-});
-player.createFixture({ shape: Box(playerDef.w, playerDef.h) });
-
-const playerGeo = new THREE.BoxGeometry(
-  playerDef.w * 2,
-  playerDef.h * 2,
-  playerDef.d
-);
-const playerMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-const playerBox = new THREE.Mesh(playerGeo, playerMat);
-scene.add(playerBox);
-
-let testBody = world.createDynamicBody({
-  position: Vec2(1.8, 20.0),
-});
-testBody.createFixture({ shape: Box(playerDef.w, playerDef.h), density: 1.0 });
-
-const testMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-const testBox = new THREE.Mesh(playerGeo, testMat);
-scene.add(testBox);
+const player = createBodyAndMesh(playerDef.w, playerDef.h, playerDef.d, playerDef.x, playerDef.y, 0x0000ff, "dynamic");
+const test = createBodyAndMesh(playerDef.w, playerDef.h, playerDef.d, 1.8, 20.0, 0xff0000, "dynamic");
 
 let groundDef = {
   w: 20.0,
@@ -64,23 +63,7 @@ let groundDef = {
   y: 0.0,
 };
 
-let ground = world.createBody({ position: Vec2(groundDef.x, groundDef.y) });
-ground.createFixture({
-  shape: Box(groundDef.w, groundDef.h),
-  density: 0.0,
-});
-
-const groundGeo = new THREE.BoxGeometry(
-  groundDef.w,
-  groundDef.h * 2,
-  groundDef.z
-);
-const groundMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-const groundBox = new THREE.Mesh(groundGeo, groundMat);
-scene.add(groundBox);
-
-// const groundPos = convertBox2DToThree(ground.getPosition());
-// groundBox.position.set(groundPos.x, groundPos.y, groundPos.z);
+const ground = createBodyAndMesh(groundDef.w, groundDef.h, groundDef.d, groundDef.x, groundDef.y, 0x00ff00, "static");
 
 // Render loop
 function animate() {
@@ -90,12 +73,13 @@ function animate() {
   world.step(1 / 60);
 
   const playerPos = player.getPosition();
-  playerBox.position.set(playerPos.x, playerPos.y, playerBox.position.z);
+  // player.body.position.set(playerPos.x, playerPos.y, playerBox.position.z);
+  player.mesh.position.set(playerPos.x, playerPos.y, player.mesh.position.z);
 
-  const testPos = testBody.getPosition();
-  const testAngleDegrees = testBody.getAngle();
-  testBox.position.set(testPos.x, testPos.y, testBox.position.z);
-  testBox.rotation.z = testAngleDegrees;
+  const testPos = test.body.getPosition();
+  const testAngleDegrees = test.body.getAngle();
+  test.mesh.position.set(testPos.x, testPos.y, test.mesh.position.z);
+  test.mesh.rotation.z = testAngleDegrees;
 
   renderer.render(scene, camera);
 }
