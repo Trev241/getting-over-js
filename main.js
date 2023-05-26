@@ -17,6 +17,7 @@ document.body.appendChild(renderer.domElement);
 camera.position.z = 50;
 
 const SCALE_FACTOR = 2.0;
+const HAMMER_LENGTH = 5;
 
 // Physics
 let pl = planck,
@@ -26,11 +27,31 @@ let pl = planck,
 let world = pl.World({ gravity: Vec2(0.0, -10) });
 
 // Helper Function to create box
-function createBodyAndMesh(width, height, depth, xCor, yCor, color, type) {
-  const body = world.createBody({ position: Vec2(xCor, yCor), type });
-  body.createFixture({ shape: Box(width, height), density: 1.0 });
+function createBodyAndMesh(
+  width,
+  height,
+  depth,
+  xCor,
+  yCor,
+  color,
+  type,
+  density = 1.0,
+  fixedRotation = false,
+  bullet = false
+) {
+  const body = world.createBody({
+    position: Vec2(xCor, yCor),
+    type,
+    fixedRotation,
+    bullet,
+  });
+  body.createFixture({ shape: Box(width, height), density });
 
-  const geometry = new THREE.BoxGeometry(width * 2, height * 2, depth);
+  const geometry = new THREE.BoxGeometry(
+    width * SCALE_FACTOR,
+    height * SCALE_FACTOR,
+    depth
+  );
   const material = new THREE.MeshBasicMaterial({ color: color });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(xCor, yCor, 1.0);
@@ -44,74 +65,43 @@ function createBodyAndMesh(width, height, depth, xCor, yCor, color, type) {
   return { body, mesh, getPosition };
 }
 
-let playerDef = {
-  w: 1.0,
-  h: 2,
-  d: 1.0,
-  x: 0.0,
-  y: 10.0,
-};
-
 const player = createBodyAndMesh(
-  playerDef.w,
-  playerDef.h,
-  playerDef.d,
-  playerDef.x,
-  playerDef.y,
+  1.0,
+  2.0,
+  1.0,
+  0.0,
+  10.0,
   0x0000ff,
-  "dynamic"
+  "dynamic",
+  100,
+  true
 );
-
-let hammerDef = {
-  w: 0.75,
-  h: 0.25,
-  d: 0.25,
-  x: 1.0,
-  y: 1.0,
-};
-
 const hammer = createBodyAndMesh(
-  hammerDef.w,
-  hammerDef.h,
-  hammerDef.d,
-  hammerDef.x,
-  hammerDef.y,
+  0.75,
+  0.25,
+  0.25,
+  1.0,
+  1.0,
   0x0000ff,
-  "dynamic"
+  "dynamic",
+  0.01,
+  false,
+  true
 );
-
 const joint = world.createJoint(
   pl.RopeJoint({
     bodyA: player.body,
     bodyB: hammer.body,
-    maxLength: 5,
+    maxLength: HAMMER_LENGTH,
   })
 );
-
-const test = createBodyAndMesh(
-  playerDef.w,
-  playerDef.h,
-  playerDef.d,
-  1.8,
-  20.0,
-  0xff0000,
-  "dynamic"
-);
-
-let groundDef = {
-  w: 20.0,
-  h: 0.125,
-  d: 1.0,
-  x: 0.0,
-  y: 0.0,
-};
-
+const test = createBodyAndMesh(1.0, 2.0, 1.0, 1.8, 20.0, 0xff0000, "dynamic");
 const ground = createBodyAndMesh(
-  groundDef.w,
-  groundDef.h,
-  groundDef.d,
-  groundDef.x,
-  groundDef.y,
+  20.0,
+  0.125,
+  1.0,
+  0.0,
+  0.0,
   0x00ff00,
   "static"
 );
@@ -119,7 +109,7 @@ const ground = createBodyAndMesh(
 // const groundPos = convertBox2DToThree(ground.getPosition());
 // groundBox.position.set(groundPos.x, groundPos.y, groundPos.z);
 
-let pos = new THREE.Vector3();
+let mousePos = new THREE.Vector3();
 
 // Render loop
 function animate() {
@@ -145,17 +135,24 @@ function animate() {
   hammer.mesh.rotation.z = hammerAngle;
 
   // Directly setting position causes the body to ignore collisions. Do NOT use
-  // hammer.setPosition(Vec2(pos.x, pos.y));
+  // hammer.setPosition(Vec2(mousePos.x, mousePos.y));
 
-  let target = new Vec2(pos.x, pos.y);
-  hammer.body.setLinearVelocity(target.sub(hammer.getPosition()).mul(20));
+  const distance = Math.abs(
+    Math.hypot(mousePos.x - playerPos.x, mousePos.y - playerPos.y)
+  );
+  const angle = Math.atan2(mousePos.y - playerPos.y, mousePos.x - playerPos.x);
+  const dest = Vec2(Math.cos(angle), Math.sin(angle))
+    .mul(Math.min(HAMMER_LENGTH, distance))
+    .add(player.getPosition());
+
+  hammer.body.setLinearVelocity(dest.sub(hammer.getPosition()).mul(50));
 
   renderer.render(scene, camera);
 }
 
 window.onmousemove = function (e) {
   let vec = new THREE.Vector3();
-  // let pos = new THREE.Vector3();
+  // let mousePos = new THREE.Vector3();
 
   // Normalize screen coordinates between the range -1 to +1
   vec.set(
@@ -167,12 +164,14 @@ window.onmousemove = function (e) {
   vec.sub(camera.position).normalize();
 
   let distance = -camera.position.z / vec.z;
-  pos.copy(camera.position).add(vec.multiplyScalar(distance));
+  mousePos.copy(camera.position).add(vec.multiplyScalar(distance));
 
-  console.log(vec);
+  // console.log(vec);
 };
 
-window.onscroll = function (e) {};
+window.addEventListener("wheel", function (e) {
+  camera.position.z += e.deltaY / Math.abs(e.deltaY);
+});
 
 if (WebGL.isWebGLAvailable()) {
   // Initiate function or other initializations here
