@@ -61,6 +61,33 @@ const player = createBodyAndMesh(
   0x0000ff,
   "dynamic"
 );
+
+let hammerDef = {
+  w: 0.75,
+  h: 0.25,
+  d: 0.25,
+  x: 1.0,
+  y: 1.0,
+};
+
+const hammer = createBodyAndMesh(
+  hammerDef.w,
+  hammerDef.h,
+  hammerDef.d,
+  hammerDef.x,
+  hammerDef.y,
+  0x0000ff,
+  "dynamic"
+);
+
+const joint = world.createJoint(
+  pl.RopeJoint({
+    bodyA: player.body,
+    bodyB: hammer.body,
+    maxLength: 5,
+  })
+);
+
 const test = createBodyAndMesh(
   playerDef.w,
   playerDef.h,
@@ -101,11 +128,11 @@ function animate() {
   // Simulate one step in Physics world
   world.step(1 / 60);
 
-  const playerPos = player.getPosition();
-  const playerAngle = player.getAngle();
+  const playerPos = player.body.getPosition();
+  const playerAngle = player.body.getAngle();
   // player.body.position.set(playerPos.x, playerPos.y, playerBox.position.z);
   player.mesh.position.set(playerPos.x, playerPos.y, player.mesh.position.z);
-  playerBox.rotation.z = playerAngle;
+  player.mesh.rotation.z = playerAngle;
 
   const testPos = test.body.getPosition();
   const testAngle = test.body.getAngle();
@@ -113,15 +140,15 @@ function animate() {
   test.mesh.rotation.z = testAngle;
 
   const hammerPos = hammer.getPosition();
-  const hammerAngle = player.getAngle();
-  hammerBox.position.set(hammerPos.x, hammerPos.y, hammerBox.position.z);
-  hammerBox.rotation.z = hammerAngle;
+  const hammerAngle = player.body.getAngle();
+  hammer.mesh.position.set(hammerPos.x, hammerPos.y, hammer.mesh.position.z);
+  hammer.mesh.rotation.z = hammerAngle;
 
   // Directly setting position causes the body to ignore collisions. Do NOT use
   // hammer.setPosition(Vec2(pos.x, pos.y));
 
   let target = new Vec2(pos.x, pos.y);
-  hammer.setLinearVelocity(target.sub(hammer.getPosition()).mul(20));
+  hammer.body.setLinearVelocity(target.sub(hammer.getPosition()).mul(20));
 
   renderer.render(scene, camera);
 }
