@@ -19,6 +19,7 @@ camera.position.z = 50;
 
 const SCALE_FACTOR = 2.0;
 const HAMMER_LENGTH = 7.5;
+const PLAYER_GRAVITY_SCALE = 20.0;
 
 // Physics
 let pl = planck,
@@ -77,11 +78,11 @@ const player = createBodyAndMesh(
   0.0,
   0x0000ff,
   "dynamic",
-  0.001,
+  25.0,
   true,
   false,
   1.0,
-  30.0
+  1.0
 );
 const hammer = createBodyAndMesh(
   0.25,
@@ -89,28 +90,28 @@ const hammer = createBodyAndMesh(
   0.25,
   0.5,
   0.0,
-  0x00ffff,
+  0xffff00,
   "dynamic",
-  0.0001,
+  50.0,
   false,
   true,
-  100.0,
+  1000000.0,
   0.0
 );
 
 const connector = createBodyAndMesh(
-  0.25,
-  0.25,
+  HAMMER_LENGTH + 1.0,
+  HAMMER_LENGTH + 1.0,
   0.25,
   0.0,
   0.0,
-  0x00ff00,
+  0x00ffff,
   "dynamic",
   1.0,
   false,
   false,
   1.0,
-  0.0
+  1.0
 );
 
 // const joint = world.createJoint(
@@ -141,13 +142,11 @@ const debugPoint2 = new THREE.Mesh(debugGeo, debugMat);
 scene.add(debugPoint1);
 scene.add(debugPoint2);
 
-player.body.setLinearDamping(1.5);
-
 const revoluteJoint = world.createJoint(
   pl.RevoluteJoint(
     {
-      maxMotorTorque: 10,
-      enableMotor: false,
+      maxMotorTorque: 10000000,
+      enableMotor: true,
     },
     player.body,
     connector.body,
@@ -161,7 +160,7 @@ const prismaticJoint = world.createJoint(
       lowerTranslation: 0.0,
       upperTranslation: HAMMER_LENGTH,
       enableLimit: true,
-      maxMotorForce: 10.0,
+      maxMotorForce: 100000.0,
       motorSpeed: 0.0,
       enableMotor: true,
     },
@@ -183,6 +182,7 @@ let mouseDx = 0;
 let mouseDy = 0;
 let normal = null;
 let groundJoint = null;
+let grounded = false;
 
 let stop = false;
 let frameCount = 0;
@@ -225,7 +225,7 @@ function animate() {
 
     const connectorPos = connector.body.getPosition();
     const connectorAngle = connector.body.getAngle();
-    connector.mesh.position.set(connectorPos.x, connectorPos.y, 5);
+    connector.mesh.position.set(connectorPos.x, connectorPos.y, -1);
     connector.mesh.rotation.z = connectorAngle;
 
     // // Directly setting position causes the body to ignore collisions. Do NOT use
@@ -264,32 +264,42 @@ function animate() {
     //   player.body.setLinearVelocity(dest.sub(playerPos));
     // }
 
-    // const angleTarget = 90.0 * DEG2RAD;
-
     // REVOLUTE JOINT CONTROLS
-    const angleTarget = Math.atan2(
+    // const angleTarget = Math.atan2(
+    //   mousePos.y - playerPos.y,
+    //   mousePos.x - playerPos.x
+    // );
+
+    // const angleNext =
+    //   revoluteJoint.getJointAngle() +
+    //   connector.body.getAngularVelocity() / 60.0;
+    // let angleError = angleTarget - angleNext;
+    // while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
+    // while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
+    // const desiredAngularVel = angleError * 60.0;
+    // const torque =
+    //   (connector.body.getInertia() * desiredAngularVel) / (1 / 60.0);
+    // connector.body.applyTorque(torque);
+
+    // EXPERIMENTAL REVOLUTE JOINT CONTROLS
+    let angleTarget = Math.atan2(
       mousePos.y - playerPos.y,
       mousePos.x - playerPos.x
     );
-
-    const angleNext =
-      revoluteJoint.getJointAngle() +
-      connector.body.getAngularVelocity() / 60.0;
-    let angleError = angleTarget - angleNext;
+    let angleError = angleTarget - revoluteJoint.getJointAngle();
     while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
     while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
-    const desiredAngularVel = angleError * 60.0;
-    const torque =
-      (connector.body.getInertia() * desiredAngularVel) / (1 / 60.0);
-    connector.body.applyTorque(torque);
+    revoluteJoint.setMotorSpeed(angleError * 60.0);
 
     // PRISMATIC JOINT CONTROLS
-    const translationTarget =
+    const translationTarget = Math.min(
       Math.abs(Math.hypot(mousePos.x - playerPos.x, mousePos.y - playerPos.y)) -
-      1.0;
+        1.0,
+      HAMMER_LENGTH
+    );
     const translationError =
       translationTarget - prismaticJoint.getJointTranslation();
-    prismaticJoint.setMotorSpeed(translationError * 50.0);
+    prismaticJoint.setMotorSpeed(translationError * 60.0);
 
     // Make camera follow player
     camera.position.x = playerPos.x;
@@ -305,26 +315,29 @@ world.on("pre-solve", function (contact) {
   const bodyA = fixtureA.getBody();
   const bodyB = fixtureB.getBody();
 
-  if (
-    (bodyA === hammer.body && bodyB === player.body) ||
-    (bodyA === player.body && bodyB === hammer.body)
-  ) {
+  if (bodyA === connector.body || bodyB === connector.body)
     contact.setEnabled(false);
+
+  if (bodyA === hammer.body || bodyB === hammer.body) {
+    player.body.setGravityScale(0.0);
+
+    if (
+      (bodyA === hammer.body && bodyB === player.body) ||
+      (bodyA === player.body && bodyB === hammer.body)
+    ) {
+      contact.setEnabled(false);
+    } else grounded = true;
   }
 });
 
 world.on("end-contact", function (contact) {
-  // const fixtureA = contact.getFixtureA();
-  // const fixtureB = contact.getFixtureB();
-  // const bodyA = fixtureA.getBody();
-  // const bodyB = fixtureB.getBody();
-  // // Identify hammer object
-  // let hammerBody;
-  // if (bodyA === hammer.body) hammerBody = bodyA;
-  // else if (bodyB === hammer.body) hammerBody = bodyB;
-  // else return;
-  // anchorPos = null;
-  // player.body.setGravityScale(10.0);
+  const fixtureA = contact.getFixtureA();
+  const fixtureB = contact.getFixtureB();
+  const bodyA = fixtureA.getBody();
+  const bodyB = fixtureB.getBody();
+
+  if (bodyA === hammer.body || bodyB === hammer.body)
+    player.body.setGravityScale(PLAYER_GRAVITY_SCALE);
 });
 
 window.addEventListener("mousemove", function (e) {
