@@ -78,7 +78,7 @@ const player = createBodyAndMesh(
   0.0,
   0x0000ff,
   "dynamic",
-  25.0,
+  125.0,
   true,
   false,
   1.0,
@@ -92,7 +92,7 @@ const hammer = createBodyAndMesh(
   0.0,
   0xffff00,
   "dynamic",
-  50.0,
+  200.0,
   false,
   true,
   1000000.0,
@@ -319,14 +319,12 @@ world.on("pre-solve", function (contact) {
     contact.setEnabled(false);
 
   if (bodyA === hammer.body || bodyB === hammer.body) {
-    player.body.setGravityScale(0.0);
-
     if (
       (bodyA === hammer.body && bodyB === player.body) ||
       (bodyA === player.body && bodyB === hammer.body)
     ) {
       contact.setEnabled(false);
-    } else grounded = true;
+    } else player.body.setGravityScale(0.0);
   }
 });
 
