@@ -1,7 +1,13 @@
+import RAPIER from "@dimforge/rapier2d";
 import * as THREE from "three";
-import * as planck from "planck";
 import WebGL from "three/addons/capabilities/WebGL.js";
-import { DEG2RAD, RAD2DEG } from "three/src/math/mathutils";
+import { renderObj } from "./renderer";
+
+const RAD2DEG = 180 / Math.PI;
+const DEG2RAD = Math.PI / 180;
+
+let angleCursor;
+let angleActual;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -10,374 +16,199 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
+camera.position.z = 10;
+
+var vec = new THREE.Vector3(); // create once and reuse
+var pos = new THREE.Vector3(); // create once and reuse
 
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-camera.position.z = 50;
+// Physics Engine
+let world = new RAPIER.World({ x: 0.0, y: -9.81 });
 
-const SCALE_FACTOR = 2.0;
-const HAMMER_LENGTH = 7.5;
-const PLAYER_GRAVITY_SCALE = 20.0;
+// Creating the ground
+const groundGeo = new THREE.BoxGeometry(100, 0.5, 1);
+const groundMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const groundObj = new THREE.Mesh(groundGeo, groundMat);
+scene.add(groundObj);
 
-// Physics
-let pl = planck,
-  Vec2 = pl.Vec2,
-  Box = pl.Box;
-
-let world = pl.World({ gravity: Vec2(0.0, -10) });
-
-// Helper Function to create box
-function createBodyAndMesh(
-  width,
-  height,
-  depth,
-  xCor,
-  yCor,
-  color,
-  type,
-  density = 1.0,
-  fixedRotation = false,
-  bullet = false,
-  friction = 1.0,
-  gravityScale = 1.0
-) {
-  const body = world.createBody({
-    position: Vec2(xCor, yCor),
-    type,
-    fixedRotation,
-    bullet,
-    gravityScale,
-  });
-  body.createFixture({ shape: Box(width, height), density, friction });
-
-  const geometry = new THREE.BoxGeometry(
-    width * SCALE_FACTOR,
-    height * SCALE_FACTOR,
-    depth
-  );
-  const material = new THREE.MeshBasicMaterial({ color: color });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(xCor, yCor, 1.0);
-  scene.add(mesh);
-
-  const getPosition = () => {
-    const pos = body.getPosition();
-    return { x: pos.x, y: pos.y };
-  };
-
-  return { body, mesh, getPosition };
-}
-
-const player = createBodyAndMesh(
-  1.0,
-  2.0,
-  1.0,
-  0.0,
-  0.0,
-  0x0000ff,
-  "dynamic",
-  125.0,
-  true,
-  false,
-  1.0,
-  1.0
-);
-const hammer = createBodyAndMesh(
-  0.25,
-  0.25,
-  0.25,
-  0.5,
-  0.0,
-  0xffff00,
-  "dynamic",
-  200.0,
-  false,
-  true,
-  1000000.0,
-  0.0
+let groundRb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+let groundCd = world.createCollider(
+  RAPIER.ColliderDesc.cuboid(100, 0.5),
+  groundRb
 );
 
-const connector = createBodyAndMesh(
-  HAMMER_LENGTH + 1.0,
-  HAMMER_LENGTH + 1.0,
-  0.25,
-  0.0,
-  0.0,
-  0x00ffff,
-  "dynamic",
-  1.0,
-  false,
-  false,
-  1.0,
-  1.0
+// Creating the player
+const playerGeo = new THREE.BoxGeometry(1, 1, 1);
+const playerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+const playerObj = new THREE.Mesh(playerGeo, playerMat);
+scene.add(playerObj);
+
+let playerRb = world.createRigidBody(
+  new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
+    .setTranslation(0.0, 0.0)
+    // .setRotation(5.0
+    // .setLinvel(1.0, 0)
+    // .setAngvel(2.0)
+    // .setGravityScale(0)
+    .setCanSleep(true)
+    .setCcdEnabled(true)
+);
+let playerCd = world.createCollider(
+  RAPIER.ColliderDesc.cuboid(1.0, 1.0).setCollisionGroups(0x00010000),
+  playerRb
+);
+playerCd.setMass(20.0);
+
+// // Creating the hammer
+const hammerGeo = new THREE.BoxGeometry(1, 1, 1);
+const hammerMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+const hammerObj = new THREE.Mesh(hammerGeo, hammerMat);
+scene.add(hammerObj);
+
+let hammerRb = world.createRigidBody(
+  new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
+    .setTranslation(-3, 2.0)
+    .setGravityScale(0)
+    .setCanSleep(true)
+    .setCcdEnabled(true)
+);
+let hammerCd = world.createCollider(
+  RAPIER.ColliderDesc.cuboid(1.0, 1.0),
+  hammerRb
+);
+hammerCd.setMass(0.001);
+
+// Creating the intermediate object
+const intermediateGeo = new THREE.BoxGeometry(6, 0.5, 0.25);
+const intermediateMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+const intermediateObj = new THREE.Mesh(intermediateGeo, intermediateMat);
+intermediateObj.position.z = 0.5;
+scene.add(intermediateObj);
+
+let intermediateRb = world.createRigidBody(
+  new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
+    // .setTranslation(0.0, 0.0)
+    // .setAdditionalMass(500)
+    // .setAngvel(100)
+    .setCanSleep(true)
+    .setCcdEnabled(true)
+);
+let intermediateCd = world.createCollider(
+  RAPIER.ColliderDesc.cuboid(3, 0.25).setTranslation(0.0, 0),
+  intermediateRb
 );
 
-// const joint = world.createJoint(
-//   pl.RopeJoint({
-//     bodyA: player.body,
-//     bodyB: hammer.body,
-//     maxLength: HAMMER_LENGTH,
-//   })
+// Creating the handle
+// const handleGeo = new THREE.BoxGeometry(3, 0.25, 0.25);
+// const handleMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+// const handleObj = new THREE.Mesh(handleGeo, handleMat);
+// handleObj.position.z = 0.5;
+// scene.add(handleObj);
+
+// const handleRb = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic());
+// const handleCd = world.createCollider(
+//   RAPIER.ColliderDesc.cuboid(3, 1).setSensor(true),
+//   hammerRb
 // );
 
-const test = createBodyAndMesh(1.0, 2.0, 1.0, -7.5, 20.0, 0xff0000, "dynamic");
-const ground = createBodyAndMesh(
-  100.0,
-  0.125,
-  1.0,
-  0.0,
-  -2.0,
-  0x00ff00,
-  "static"
+// Creating the revolute joint
+let revoluteJoint = world.createImpulseJoint(
+  RAPIER.JointData.revolute({ x: 0.0, y: 0.0 }, { x: 0.0, y: 0.0 }),
+  playerRb,
+  intermediateRb,
+  true
 );
+revoluteJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
+// revoluteJoint.configureMotorVelocity(-200.0, 20.0);
+// revoluteJoint.configureMotorPosition(-400, 100, 1);
 
-const debugGeo = new THREE.SphereGeometry(0.5);
-const debugMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+// Create the prismatic joint
+// let params = RAPIER.JointData.prismatic(
+//   { x: 0.0, y: 0.0 },
+//   { x: 0.0, y: 0.0 },
+//   { x: 0.0, y: 1.0 }
+// );
+// // params.limitsEnabled = true;
+// params.limits = [-2, 2];
+// let prismaticJoint = world.createImpulseJoint(
+//   params,
+//   intermediateRb,
+//   hammerRb,
+//   true
+// );
+// prismaticJoint.configureMotorModel(RAPIER.MotorModel.AccelerationBased);
 
-const debugPoint1 = new THREE.Mesh(debugGeo, debugMat);
-const debugPoint2 = new THREE.Mesh(debugGeo, debugMat);
-
-scene.add(debugPoint1);
-scene.add(debugPoint2);
-
-const revoluteJoint = world.createJoint(
-  pl.RevoluteJoint(
-    {
-      maxMotorTorque: 10000000,
-      enableMotor: true,
-    },
-    player.body,
-    connector.body,
-    player.body.getWorldCenter()
-  )
-);
-
-const prismaticJoint = world.createJoint(
-  pl.PrismaticJoint(
-    {
-      lowerTranslation: 0.0,
-      upperTranslation: HAMMER_LENGTH,
-      enableLimit: true,
-      maxMotorForce: 100000.0,
-      motorSpeed: 0.0,
-      enableMotor: true,
-    },
-    connector.body,
-    hammer.body,
-    hammer.body.getWorldCenter(),
-    Vec2(1.0, 0.0)
-  )
-);
-
-// const groundPos = convertBox2DToThree(ground.getPosition());
-// groundBox.position.set(groundPos.x, groundPos.y, groundPos.z);
-
-let mousePos = new THREE.Vector3();
-let anchorPos = null;
-let isMouseMoving = false;
-let mouseIdleTimeout;
-let mouseDx = 0;
-let mouseDy = 0;
-let normal = null;
-let groundJoint = null;
-let grounded = false;
-
-let stop = false;
-let frameCount = 0;
-let fps, fpsInterval, startTime, now, then, elapsed;
-
-function startAnimating(fps) {
-  fpsInterval = 1000 / fps;
-  then = window.performance.now();
-  startTime = then;
-  animate();
-}
-
-// Render loop
 function animate() {
-  requestAnimationFrame(animate);
+  // Execute one step in the Physics world
+  world.step();
 
-  now = window.performance.now();
-  elapsed = now - then;
+  renderObj(playerRb, playerObj);
+  renderObj(hammerRb, hammerObj);
+  renderObj(groundRb, groundObj);
+  // renderObj(handleRb, handleObj);
+  renderObj(intermediateRb, intermediateObj);
 
-  if (elapsed > fpsInterval) {
-    then = now - (elapsed % fpsInterval);
-    // Simulate one step in Physics world
-    world.step(1 / 60);
+  // prismaticJoint.configureMotorPosition(5, 1000, 100);
 
-    const playerPos = player.body.getPosition();
-    const playerAngle = player.body.getAngle();
-    // player.body.position.set(playerPos.x, playerPos.y, playerBox.position.z);
-    player.mesh.position.set(playerPos.x, playerPos.y, player.mesh.position.z);
-    player.mesh.rotation.z = playerAngle;
+  angleActual = intermediateCd.rotation();
+  // intermediateRb.setRotation(angleCursor, true);
+  let angleError = angleCursor - angleActual;
+  while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
+  while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
+  intermediateRb.setAngvel(angleError * 5, true);
 
-    const testPos = test.body.getPosition();
-    const testAngle = test.body.getAngle();
-    test.mesh.position.set(testPos.x, testPos.y, test.mesh.position.z);
-    test.mesh.rotation.z = testAngle;
+  const playerPos = playerRb.translation();
+  camera.position.x = playerPos.x;
+  camera.position.y = playerPos.y;
 
-    const hammerPos = hammer.getPosition();
-    const hammerAngle = hammer.body.getAngle();
-    hammer.mesh.position.set(hammerPos.x, hammerPos.y, 4);
-    hammer.mesh.rotation.z = hammerAngle;
-
-    const connectorPos = connector.body.getPosition();
-    const connectorAngle = connector.body.getAngle();
-    connector.mesh.position.set(connectorPos.x, connectorPos.y, -1);
-    connector.mesh.rotation.z = connectorAngle;
-
-    // // Directly setting position causes the body to ignore collisions. Do NOT use
-    // // hammer.setPosition(Vec2(mousePos.x, mousePos.y));
-
-    // const distance = Math.abs(
-    //   Math.hypot(mousePos.x - playerPos.x, mousePos.y - playerPos.y)
-    // );
-    // const angle = Math.atan2(mousePos.y - playerPos.y, mousePos.x - playerPos.x);
-    // const dest = Vec2(Math.cos(angle), Math.sin(angle))
-    //   .mul(Math.min(HAMMER_LENGTH, distance))
-    //   .add(playerPos);
-
-    // hammer.body.setLinearVelocity(dest.sub(hammer.getPosition()).mul(75.0));
-    // hammer.body.setAngle(angle + (90 * Math.PI) / 180);
-
-    // if (anchorPos) {
-    //   const MOUSE_DELTA_MODIFIER = 1.5;
-    //   const MAX_LAUNCH_DISTANCE = 60.0;
-
-    //   mouseDx *= MOUSE_DELTA_MODIFIER;
-    //   mouseDy *= MOUSE_DELTA_MODIFIER;
-
-    //   const extended = Math.abs(
-    //     Math.hypot(hammerPos.x - playerPos.x, hammerPos.y - playerPos.y)
-    //   );
-
-    //   let x =
-    //     playerPos.x -
-    //     Math.max(Math.min(mouseDx, MAX_LAUNCH_DISTANCE), -MAX_LAUNCH_DISTANCE);
-    //   let y =
-    //     playerPos.y +
-    //     Math.max(Math.min(mouseDy, MAX_LAUNCH_DISTANCE), -MAX_LAUNCH_DISTANCE);
-
-    //   const dest = Vec2(x, y);
-    //   player.body.setLinearVelocity(dest.sub(playerPos));
-    // }
-
-    // REVOLUTE JOINT CONTROLS
-    // const angleTarget = Math.atan2(
-    //   mousePos.y - playerPos.y,
-    //   mousePos.x - playerPos.x
-    // );
-
-    // const angleNext =
-    //   revoluteJoint.getJointAngle() +
-    //   connector.body.getAngularVelocity() / 60.0;
-    // let angleError = angleTarget - angleNext;
-    // while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
-    // while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
-    // const desiredAngularVel = angleError * 60.0;
-    // const torque =
-    //   (connector.body.getInertia() * desiredAngularVel) / (1 / 60.0);
-    // connector.body.applyTorque(torque);
-
-    // EXPERIMENTAL REVOLUTE JOINT CONTROLS
-    let angleTarget = Math.atan2(
-      mousePos.y - playerPos.y,
-      mousePos.x - playerPos.x
-    );
-    let angleError = angleTarget - revoluteJoint.getJointAngle();
-    while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
-    while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
-    revoluteJoint.setMotorSpeed(angleError * 60.0);
-
-    // PRISMATIC JOINT CONTROLS
-    const translationTarget = Math.min(
-      Math.abs(Math.hypot(mousePos.x - playerPos.x, mousePos.y - playerPos.y)) -
-        1.0,
-      HAMMER_LENGTH
-    );
-    const translationError =
-      translationTarget - prismaticJoint.getJointTranslation();
-    prismaticJoint.setMotorSpeed(translationError * 60.0);
-
-    // Make camera follow player
-    camera.position.x = playerPos.x;
-    camera.position.y = playerPos.y;
-
-    renderer.render(scene, camera);
-  }
+  // Render
+  renderer.render(scene, camera);
 }
 
-world.on("pre-solve", function (contact) {
-  const fixtureA = contact.getFixtureA();
-  const fixtureB = contact.getFixtureB();
-  const bodyA = fixtureA.getBody();
-  const bodyB = fixtureB.getBody();
+if (WebGL.isWebGL2Available()) {
+  // Initiate function or other initializations here
+  renderer.setAnimationLoop(animate);
+} else {
+  const warning = WebGL.getWebGL2ErrorMessage();
+  document.getElementById("container").appendChild(warning);
+}
 
-  if (bodyA === connector.body || bodyB === connector.body)
-    contact.setEnabled(false);
-
-  if (bodyA === hammer.body || bodyB === hammer.body) {
-    if (
-      (bodyA === hammer.body && bodyB === player.body) ||
-      (bodyA === player.body && bodyB === hammer.body)
-    ) {
-      contact.setEnabled(false);
-    } else player.body.setGravityScale(0.0);
-  }
-});
-
-world.on("end-contact", function (contact) {
-  const fixtureA = contact.getFixtureA();
-  const fixtureB = contact.getFixtureB();
-  const bodyA = fixtureA.getBody();
-  const bodyB = fixtureB.getBody();
-
-  if (bodyA === hammer.body || bodyB === hammer.body)
-    player.body.setGravityScale(PLAYER_GRAVITY_SCALE);
-});
-
-window.addEventListener("mousemove", function (e) {
-  if (mouseIdleTimeout) this.clearTimeout(mouseIdleTimeout);
-
-  let vec = new THREE.Vector3();
-  // let mousePos = new THREE.Vector3();
-
-  // Normalize screen coordinates between the range -1 to +1
+window.addEventListener("mousemove", (e) => {
   vec.set(
     (e.clientX / window.innerWidth) * 2 - 1,
     -(e.clientY / window.innerHeight) * 2 + 1,
     0.5
   );
+
   vec.unproject(camera);
   vec.sub(camera.position).normalize();
+  var distance = -camera.position.z / vec.z;
+  pos.copy(camera.position).add(vec.multiplyScalar(distance));
 
-  let distance = -camera.position.z / vec.z;
-  mousePos.copy(camera.position).add(vec.multiplyScalar(distance));
+  const playerPos = playerRb.translation();
+  const hammerPos = hammerRb.translation();
 
-  // console.log(e.movementX + " " + e.movementY);
-  // console.log(vec);
+  angleCursor = Math.atan2(pos.y - playerPos.y, pos.x - playerPos.x);
+  // let angleHammer = Math.atan2(
+  //   hammerPos.y - playerPos.y,
+  //   hammerPos.x - playerPos.x
+  // );
 
-  mouseDx = e.movementX;
-  mouseDy = e.movementY;
+  // let angleError = angleCursor - angleActual;
+  // while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
+  // while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
+  // const angleError = angleCursor - angleActual;
 
-  // Timeout to detect if mouse is stationary
-  mouseIdleTimeout = this.setTimeout(function () {
-    isMouseMoving = false;
-    mouseDx = 0;
-    mouseDy = 0;
-  }, 100);
+  // revoluteJoint.configureMotorPosition(5, 1000, 100);
+  // revoluteJoint.configureMotorVelocity(angleCursor - angleHammer, 100);
+  // console.log(angleError);
+
+  // intermediateRb.setAngvel(angleError, true);
+  // Setting rotation directly
+
+  // console.log(angleCursor > angleHammer ? 5 : -5);
+  // console.log(angleCursor, angleHammer);
 });
-
-window.addEventListener("wheel", function (e) {
-  camera.position.z += e.deltaY / Math.abs(e.deltaY);
-});
-
-if (WebGL.isWebGLAvailable()) {
-  // Initiate function or other initializations here
-  startAnimating(60.0);
-} else {
-  const warning = WebGL.getWebGLErrorMessage();
-  document.getElementById("container").appendChild(warning);
-}
