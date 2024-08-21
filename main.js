@@ -76,7 +76,7 @@ let hammerRb = world.createRigidBody(
     .setCcdEnabled(true)
 );
 let hammerCd = world.createCollider(
-  RAPIER.ColliderDesc.cuboid(1.0, 1.0),
+  RAPIER.ColliderDesc.cuboid(1.0, 1.0).setCollisionGroups(0x00010000),
   hammerRb
 );
 hammerCd.setMass(0.001);
@@ -90,14 +90,16 @@ scene.add(intermediateObj);
 
 let intermediateRb = world.createRigidBody(
   new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
-    // .setTranslation(0.0, 0.0)
+    .setTranslation(0.0, 0.0)
     // .setAdditionalMass(500)
     // .setAngvel(100)
     .setCanSleep(true)
     .setCcdEnabled(true)
 );
 let intermediateCd = world.createCollider(
-  RAPIER.ColliderDesc.cuboid(3, 0.25).setTranslation(0.0, 0),
+  RAPIER.ColliderDesc.cuboid(3, 0.25)
+    // .setCollisionGroups(0x00010000)
+    .setTranslation(0.0, 0),
   intermediateRb
 );
 
@@ -116,7 +118,7 @@ let intermediateCd = world.createCollider(
 
 // Creating the revolute joint
 let revoluteJoint = world.createImpulseJoint(
-  RAPIER.JointData.revolute({ x: 0.0, y: 0.0 }, { x: 0.0, y: 0.0 }),
+  RAPIER.JointData.revolute({ x: 0.0, y: 0.0 }, { x: -3.0, y: 0.0 }),
   playerRb,
   intermediateRb,
   true
@@ -126,19 +128,19 @@ revoluteJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
 // revoluteJoint.configureMotorPosition(-400, 100, 1);
 
 // Create the prismatic joint
-// let params = RAPIER.JointData.prismatic(
-//   { x: 0.0, y: 0.0 },
-//   { x: 0.0, y: 0.0 },
-//   { x: 0.0, y: 1.0 }
-// );
-// // params.limitsEnabled = true;
-// params.limits = [-2, 2];
-// let prismaticJoint = world.createImpulseJoint(
-//   params,
-//   intermediateRb,
-//   hammerRb,
-//   true
-// );
+let params = RAPIER.JointData.prismatic(
+  { x: 0.0, y: 0.0 },
+  { x: 0.0, y: 0.0 },
+  { x: 1.0, y: 0.0 }
+);
+params.limitsEnabled = true;
+params.limits = [-2, 2];
+let prismaticJoint = world.createImpulseJoint(
+  params,
+  hammerRb,
+  intermediateRb,
+  true
+);
 // prismaticJoint.configureMotorModel(RAPIER.MotorModel.AccelerationBased);
 
 function animate() {
@@ -192,23 +194,4 @@ window.addEventListener("mousemove", (e) => {
   const hammerPos = hammerRb.translation();
 
   angleCursor = Math.atan2(pos.y - playerPos.y, pos.x - playerPos.x);
-  // let angleHammer = Math.atan2(
-  //   hammerPos.y - playerPos.y,
-  //   hammerPos.x - playerPos.x
-  // );
-
-  // let angleError = angleCursor - angleActual;
-  // while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
-  // while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
-  // const angleError = angleCursor - angleActual;
-
-  // revoluteJoint.configureMotorPosition(5, 1000, 100);
-  // revoluteJoint.configureMotorVelocity(angleCursor - angleHammer, 100);
-  // console.log(angleError);
-
-  // intermediateRb.setAngvel(angleError, true);
-  // Setting rotation directly
-
-  // console.log(angleCursor > angleHammer ? 5 : -5);
-  // console.log(angleCursor, angleHammer);
 });
