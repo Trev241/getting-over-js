@@ -8,6 +8,9 @@ const DEG2RAD = Math.PI / 180;
 
 let angleCursor;
 let angleActual;
+let cursorDistance;
+
+const hammerLength = 3;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -16,7 +19,7 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
-camera.position.z = 10;
+camera.position.z = 15;
 
 var vec = new THREE.Vector3(); // create once and reuse
 var pos = new THREE.Vector3(); // create once and reuse
@@ -29,19 +32,27 @@ document.body.appendChild(renderer.domElement);
 let world = new RAPIER.World({ x: 0.0, y: -9.81 });
 
 // Creating the ground
-const groundGeo = new THREE.BoxGeometry(100, 0.5, 1);
+let groundW = 100;
+let groundH = 1;
+
+const groundGeo = new THREE.BoxGeometry(groundW, groundH, 1);
 const groundMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 const groundObj = new THREE.Mesh(groundGeo, groundMat);
 scene.add(groundObj);
 
 let groundRb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
 let groundCd = world.createCollider(
-  RAPIER.ColliderDesc.cuboid(100, 0.5),
+  RAPIER.ColliderDesc.cuboid(groundW / 2.0, groundH / 2.0).setCollisionGroups(
+    0x00020001
+  ),
   groundRb
 );
 
 // Creating the player
-const playerGeo = new THREE.BoxGeometry(1, 1, 1);
+const playerW = 0.5;
+const playerH = 1;
+
+const playerGeo = new THREE.BoxGeometry(playerW, playerH, 1);
 const playerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
 const playerObj = new THREE.Mesh(playerGeo, playerMat);
 scene.add(playerObj);
@@ -57,32 +68,45 @@ let playerRb = world.createRigidBody(
     .setCcdEnabled(true)
 );
 let playerCd = world.createCollider(
-  RAPIER.ColliderDesc.cuboid(1.0, 1.0).setCollisionGroups(0x00010000),
+  RAPIER.ColliderDesc.cuboid(playerW / 2.0, playerH / 2.0)
+    .setTranslation(0.0, 0.0)
+    .setCollisionGroups(0x00010002),
   playerRb
 );
-playerCd.setMass(20.0);
+playerCd.setMass(0.001);
 
-// // Creating the hammer
-const hammerGeo = new THREE.BoxGeometry(1, 1, 1);
+// Creating the hammer
+const hammerS = 0.25;
+
+const hammerGeo = new THREE.BoxGeometry(hammerS, hammerS, 1);
 const hammerMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
 const hammerObj = new THREE.Mesh(hammerGeo, hammerMat);
 scene.add(hammerObj);
 
 let hammerRb = world.createRigidBody(
   new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
-    .setTranslation(-3, 2.0)
+    .setTranslation(0.0, 0.0)
     .setGravityScale(0)
     .setCanSleep(true)
     .setCcdEnabled(true)
 );
 let hammerCd = world.createCollider(
-  RAPIER.ColliderDesc.cuboid(1.0, 1.0).setCollisionGroups(0x00010000),
+  RAPIER.ColliderDesc.cuboid(hammerS / 2.0, hammerS / 2.0)
+    .setTranslation(0.0, 0.0)
+    .setCollisionGroups(0x00010002),
   hammerRb
 );
 hammerCd.setMass(0.001);
 
 // Creating the intermediate object
-const intermediateGeo = new THREE.BoxGeometry(6, 0.5, 0.25);
+let intermediateW = 2;
+let intermediateH = 0.125;
+
+const intermediateGeo = new THREE.BoxGeometry(
+  intermediateW,
+  intermediateH,
+  0.25
+);
 const intermediateMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
 const intermediateObj = new THREE.Mesh(intermediateGeo, intermediateMat);
 intermediateObj.position.z = 0.5;
@@ -97,8 +121,8 @@ let intermediateRb = world.createRigidBody(
     .setCcdEnabled(true)
 );
 let intermediateCd = world.createCollider(
-  RAPIER.ColliderDesc.cuboid(3, 0.25)
-    // .setCollisionGroups(0x00010000)
+  RAPIER.ColliderDesc.cuboid(intermediateW / 2.0, intermediateH / 2.0)
+    .setCollisionGroups(0x00010002)
     .setTranslation(0.0, 0),
   intermediateRb
 );
@@ -118,7 +142,10 @@ let intermediateCd = world.createCollider(
 
 // Creating the revolute joint
 let revoluteJoint = world.createImpulseJoint(
-  RAPIER.JointData.revolute({ x: 0.0, y: 0.0 }, { x: -3.0, y: 0.0 }),
+  RAPIER.JointData.revolute(
+    { x: 0.0, y: 0.0 },
+    { x: -intermediateW / 2.0, y: 0.0 }
+  ),
   playerRb,
   intermediateRb,
   true
@@ -130,11 +157,11 @@ revoluteJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
 // Create the prismatic joint
 let params = RAPIER.JointData.prismatic(
   { x: 0.0, y: 0.0 },
-  { x: 0.0, y: 0.0 },
+  { x: intermediateW / 2.0, y: 0.0 }, // Note: Setting the anchor to the 2nd body's origin will set it to that the intermediate body's center
   { x: 1.0, y: 0.0 }
 );
 params.limitsEnabled = true;
-params.limits = [-2, 2];
+params.limits = [0, intermediateW];
 let prismaticJoint = world.createImpulseJoint(
   params,
   hammerRb,
@@ -153,14 +180,20 @@ function animate() {
   // renderObj(handleRb, handleObj);
   renderObj(intermediateRb, intermediateObj);
 
-  // prismaticJoint.configureMotorPosition(5, 1000, 100);
-
   angleActual = intermediateCd.rotation();
   // intermediateRb.setRotation(angleCursor, true);
   let angleError = angleCursor - angleActual;
   while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
   while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
   intermediateRb.setAngvel(angleError * 5, true);
+
+  console.log(cursorDistance);
+  prismaticJoint.configureMotorPosition(
+    intermediateW - Math.min(cursorDistance, intermediateW),
+    1000,
+    100
+  );
+  // prismaticJoint.configureMotorPosition(2, 1000, 10);
 
   const playerPos = playerRb.translation();
   camera.position.x = playerPos.x;
@@ -193,5 +226,6 @@ window.addEventListener("mousemove", (e) => {
   const playerPos = playerRb.translation();
   const hammerPos = hammerRb.translation();
 
+  cursorDistance = Math.hypot(pos.y - playerPos.y, pos.x - playerPos.x);
   angleCursor = Math.atan2(pos.y - playerPos.y, pos.x - playerPos.x);
 });
