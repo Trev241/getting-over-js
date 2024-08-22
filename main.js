@@ -19,7 +19,7 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
-camera.position.z = 15;
+camera.position.z = 10;
 
 var vec = new THREE.Vector3(); // create once and reuse
 var pos = new THREE.Vector3(); // create once and reuse
@@ -34,17 +34,24 @@ let world = new RAPIER.World({ x: 0.0, y: -9.81 });
 // Creating the ground
 let groundW = 100;
 let groundH = 1;
+let groundX = 0;
+let groundY = -3;
 
 const groundGeo = new THREE.BoxGeometry(groundW, groundH, 1);
 const groundMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 const groundObj = new THREE.Mesh(groundGeo, groundMat);
 scene.add(groundObj);
 
-let groundRb = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+let groundRb = world.createRigidBody(
+  RAPIER.RigidBodyDesc.fixed()
+    .setTranslation(groundX, groundY)
+    .setCcdEnabled(true)
+);
 let groundCd = world.createCollider(
-  RAPIER.ColliderDesc.cuboid(groundW / 2.0, groundH / 2.0).setCollisionGroups(
-    0x00020001
-  ),
+  RAPIER.ColliderDesc.cuboid(groundW / 2.0, groundH / 2.0)
+    .setCollisionGroups(0x00020001)
+    .setRestitution(0)
+    .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min),
   groundRb
 );
 
@@ -63,13 +70,17 @@ let playerRb = world.createRigidBody(
     // .setRotation(5.0
     // .setLinvel(1.0, 0)
     // .setAngvel(2.0)
-    // .setGravityScale(0)
+    .setGravityScale(1)
     .setCanSleep(true)
     .setCcdEnabled(true)
 );
+playerRb.lockRotations(true, true);
+
 let playerCd = world.createCollider(
   RAPIER.ColliderDesc.cuboid(playerW / 2.0, playerH / 2.0)
     .setTranslation(0.0, 0.0)
+    .setRestitution(0)
+    .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
     .setCollisionGroups(0x00010002),
   playerRb
 );
@@ -93,10 +104,13 @@ let hammerRb = world.createRigidBody(
 let hammerCd = world.createCollider(
   RAPIER.ColliderDesc.cuboid(hammerS / 2.0, hammerS / 2.0)
     .setTranslation(0.0, 0.0)
+    .setRestitution(0)
+    .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
     .setCollisionGroups(0x00010002),
   hammerRb
 );
-hammerCd.setMass(0.001);
+hammerCd.setMass(0.00001);
+// hammerCd.setFriction(1000);
 
 // Creating the intermediate object
 let intermediateW = 2;
@@ -115,17 +129,20 @@ scene.add(intermediateObj);
 let intermediateRb = world.createRigidBody(
   new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
     .setTranslation(0.0, 0.0)
+    .setGravityScale(0)
     // .setAdditionalMass(500)
     // .setAngvel(100)
     .setCanSleep(true)
     .setCcdEnabled(true)
 );
+
 let intermediateCd = world.createCollider(
   RAPIER.ColliderDesc.cuboid(intermediateW / 2.0, intermediateH / 2.0)
-    .setCollisionGroups(0x00010002)
+    .setCollisionGroups(0x00010000)
     .setTranslation(0.0, 0),
   intermediateRb
 );
+intermediateCd.setMass(0.001);
 
 // Creating the handle
 // const handleGeo = new THREE.BoxGeometry(3, 0.25, 0.25);
@@ -155,20 +172,33 @@ revoluteJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
 // revoluteJoint.configureMotorPosition(-400, 100, 1);
 
 // Create the prismatic joint
-let params = RAPIER.JointData.prismatic(
-  { x: 0.0, y: 0.0 },
-  { x: intermediateW / 2.0, y: 0.0 }, // Note: Setting the anchor to the 2nd body's origin will set it to that the intermediate body's center
-  { x: 1.0, y: 0.0 }
-);
-params.limitsEnabled = true;
-params.limits = [0, intermediateW];
-let prismaticJoint = world.createImpulseJoint(
-  params,
-  hammerRb,
+// let params = RAPIER.JointData.prismatic(
+//   { x: 0.0, y: 0.0 },
+//   { x: intermediateW / 2.0, y: 0.0 }, // Note: Setting the anchor to the 2nd body's origin will set it to that the intermediate body's center
+//   { x: 1.0, y: 0.0 }
+// );
+// params.limitsEnabled = true;
+// params.limits = [0, intermediateW];
+// let prismaticJoint = world.createImpulseJoint(
+//   params,
+//   hammerRb,
+//   intermediateRb,
+//   true
+// );
+// prismaticJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
+
+// Creating a fixed joint
+let fixedJoint = world.createImpulseJoint(
+  RAPIER.JointData.fixed(
+    { x: 0.0, y: 0.0 },
+    0.0,
+    { x: -(intermediateW / 2.0), y: 0.0 },
+    0
+  ),
   intermediateRb,
+  hammerRb,
   true
 );
-// prismaticJoint.configureMotorModel(RAPIER.MotorModel.AccelerationBased);
 
 function animate() {
   // Execute one step in the Physics world
@@ -186,14 +216,20 @@ function animate() {
   while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
   while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
   intermediateRb.setAngvel(angleError * 5, true);
+  // revoluteJoint.configureMotorVelocity(angleError * 30, 300);
 
   console.log(cursorDistance);
-  prismaticJoint.configureMotorPosition(
-    intermediateW - Math.min(cursorDistance, intermediateW),
-    1000,
-    100
-  );
+  // prismaticJoint.configureMotorPosition(
+  //   intermediateW - Math.min(cursorDistance, intermediateW),
+  //   // 0,
+  //   100000,
+  //   100
+  // );
   // prismaticJoint.configureMotorPosition(2, 1000, 10);
+  revoluteJoint.setAnchor2({
+    x: -Math.min(cursorDistance, intermediateW) / 2.0 + 0.5,
+    y: 0.0,
+  });
 
   const playerPos = playerRb.translation();
   camera.position.x = playerPos.x;
