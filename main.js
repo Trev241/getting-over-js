@@ -9,8 +9,7 @@ const DEG2RAD = Math.PI / 180;
 let angleCursor;
 let angleActual;
 let cursorDistance;
-
-const hammerLength = 3;
+let usePrismaticJoint = true;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -67,10 +66,6 @@ scene.add(playerObj);
 let playerRb = world.createRigidBody(
   new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
     .setTranslation(0.0, 0.0)
-    // .setRotation(5.0
-    // .setLinvel(1.0, 0)
-    // .setAngvel(2.0)
-    .setGravityScale(1)
     .setCanSleep(true)
     .setCcdEnabled(true)
 );
@@ -84,7 +79,6 @@ let playerCd = world.createCollider(
     .setCollisionGroups(0x00010002),
   playerRb
 );
-playerCd.setMass(0.001);
 
 // Creating the hammer
 const hammerS = 0.25;
@@ -109,11 +103,10 @@ let hammerCd = world.createCollider(
     .setCollisionGroups(0x00010002),
   hammerRb
 );
-hammerCd.setMass(0.00001);
 // hammerCd.setFriction(1000);
 
 // Creating the intermediate object
-let intermediateW = 2;
+let intermediateW = 2.5;
 let intermediateH = 0.125;
 
 const intermediateGeo = new THREE.BoxGeometry(
@@ -142,22 +135,8 @@ let intermediateCd = world.createCollider(
     .setTranslation(0.0, 0),
   intermediateRb
 );
-intermediateCd.setMass(0.001);
 
-// Creating the handle
-// const handleGeo = new THREE.BoxGeometry(3, 0.25, 0.25);
-// const handleMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-// const handleObj = new THREE.Mesh(handleGeo, handleMat);
-// handleObj.position.z = 0.5;
-// scene.add(handleObj);
-
-// const handleRb = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic());
-// const handleCd = world.createCollider(
-//   RAPIER.ColliderDesc.cuboid(3, 1).setSensor(true),
-//   hammerRb
-// );
-
-// Creating the revolute joint
+// Create a revolute joint
 let revoluteJoint = world.createImpulseJoint(
   RAPIER.JointData.revolute(
     { x: 0.0, y: 0.0 },
@@ -168,37 +147,52 @@ let revoluteJoint = world.createImpulseJoint(
   true
 );
 revoluteJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
-// revoluteJoint.configureMotorVelocity(-200.0, 20.0);
-// revoluteJoint.configureMotorPosition(-400, 100, 1);
 
-// Create the prismatic joint
-// let params = RAPIER.JointData.prismatic(
-//   { x: 0.0, y: 0.0 },
-//   { x: intermediateW / 2.0, y: 0.0 }, // Note: Setting the anchor to the 2nd body's origin will set it to that the intermediate body's center
-//   { x: 1.0, y: 0.0 }
-// );
-// params.limitsEnabled = true;
-// params.limits = [0, intermediateW];
-// let prismaticJoint = world.createImpulseJoint(
-//   params,
-//   hammerRb,
-//   intermediateRb,
-//   true
-// );
-// prismaticJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
-
-// Creating a fixed joint
-let fixedJoint = world.createImpulseJoint(
-  RAPIER.JointData.fixed(
+let prismaticJoint;
+if (usePrismaticJoint) {
+  // Create the prismatic joint
+  let params = RAPIER.JointData.prismatic(
     { x: 0.0, y: 0.0 },
-    0.0,
-    { x: -(intermediateW / 2.0), y: 0.0 },
-    0
-  ),
-  intermediateRb,
-  hammerRb,
-  true
-);
+    { x: intermediateW / 2.0, y: 0.0 }, // Note: Setting the anchor to the 2nd body's origin will set it to that the intermediate body's center
+    { x: 1.0, y: 0.0 }
+  );
+  params.limitsEnabled = true;
+  params.limits = [0, intermediateW];
+  prismaticJoint = world.createImpulseJoint(
+    params,
+    hammerRb,
+    intermediateRb,
+    true
+  );
+  prismaticJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
+} else {
+  // Attach the hammer to the intermediate body
+  let fixedJoint = world.createImpulseJoint(
+    RAPIER.JointData.fixed(
+      { x: 0.0, y: 0.0 },
+      0.0,
+      { x: -(intermediateW / 2.0), y: 0.0 },
+      0
+    ),
+    intermediateRb,
+    hammerRb,
+    true
+  );
+}
+
+// Tweaking constraints
+
+// Note: Increasing the mass will make it more difficult to move the player
+playerCd.setMass(0.001);
+playerRb.setGravityScale(2.75);
+
+// Note: Increasing the mass makes revolutions slower but
+// improves the effect of springing up
+hammerCd.setMass(0.001);
+
+// Note: Setting this mass too high will swing the whole player
+// while setting it too low will lower the quality of control
+intermediateCd.setMass(0.001);
 
 function animate() {
   // Execute one step in the Physics world
@@ -215,21 +209,25 @@ function animate() {
   let angleError = angleCursor - angleActual;
   while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
   while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
-  intermediateRb.setAngvel(angleError * 5, true);
+  intermediateRb.setAngvel(angleError * 6, true);
   // revoluteJoint.configureMotorVelocity(angleError * 30, 300);
 
   console.log(cursorDistance);
-  // prismaticJoint.configureMotorPosition(
-  //   intermediateW - Math.min(cursorDistance, intermediateW),
-  //   // 0,
-  //   100000,
-  //   100
-  // );
-  // prismaticJoint.configureMotorPosition(2, 1000, 10);
-  revoluteJoint.setAnchor2({
-    x: -Math.min(cursorDistance, intermediateW) / 2.0 + 0.5,
-    y: 0.0,
-  });
+  if (usePrismaticJoint) {
+    // Configure the prismatic joint to position the hammer
+    prismaticJoint.configureMotorPosition(
+      intermediateW - Math.min(cursorDistance, intermediateW),
+      // 0,
+      10000, // Note: If this value is too low, you will notice a spring effect when attempting to land on the hammer
+      10
+    );
+  } else {
+    // Directly set the anchor of the revolute joint to position the hammer
+    revoluteJoint.setAnchor2({
+      x: -Math.min(cursorDistance, intermediateW) / 2.0 + intermediateW / 4.0,
+      y: 0.0,
+    });
+  }
 
   const playerPos = playerRb.translation();
   camera.position.x = playerPos.x;
