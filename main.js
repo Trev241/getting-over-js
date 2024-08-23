@@ -11,6 +11,17 @@ let angleActual;
 let cursorDistance;
 let usePrismaticJoint = true;
 
+let eventQueue = new RAPIER.EventQueue(true);
+eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+  /* Handle the collision event. */
+  console.log("Collision detected");
+});
+
+eventQueue.drainContactForceEvents((event) => {
+  let handle1 = event.collider1(); // Handle of the first collider involved in the event.
+  let handle2 = event.collider2(); // Handle of the second collider involved in the event.
+  /* Handle the contact force event. */
+});
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
   75,
@@ -50,7 +61,8 @@ let groundCd = world.createCollider(
   RAPIER.ColliderDesc.cuboid(groundW / 2.0, groundH / 2.0)
     .setCollisionGroups(0x00020001)
     .setRestitution(0)
-    .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min),
+    .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+    .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
   groundRb
 );
 
@@ -100,14 +112,16 @@ let hammerCd = world.createCollider(
     .setTranslation(0.0, 0.0)
     .setRestitution(0)
     .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-    .setCollisionGroups(0x00010002),
+    .setCollisionGroups(0x00010002)
+    .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
   hammerRb
 );
 // hammerCd.setFriction(1000);
 
 // Creating the intermediate object
-let intermediateW = 2.5;
+let intermediateW = 1.75;
 let intermediateH = 0.125;
+let prismaticMinimumLimit = 0.25;
 
 const intermediateGeo = new THREE.BoxGeometry(
   intermediateW,
@@ -157,7 +171,10 @@ if (usePrismaticJoint) {
     { x: 1.0, y: 0.0 }
   );
   params.limitsEnabled = true;
-  params.limits = [0, intermediateW];
+  // 0 here represents the farthest it can go,
+  // intermediateW would mean that the hammer is allowed to move up to the player's origin itself
+  // But we take off a small length of it to avoid that to enforce a minimum reach.
+  params.limits = [0, intermediateW - prismaticMinimumLimit]; // Suggestion: Maybe replace hard-coded constant?
   prismaticJoint = world.createImpulseJoint(
     params,
     hammerRb,
@@ -183,12 +200,13 @@ if (usePrismaticJoint) {
 // Tweaking constraints
 
 // Note: Increasing the mass will make it more difficult to move the player
-playerCd.setMass(0.001);
-playerRb.setGravityScale(2.75);
+playerCd.setMass(0.01);
+playerRb.setGravityScale(9);
 
 // Note: Increasing the mass makes revolutions slower but
 // improves the effect of springing up
 hammerCd.setMass(0.001);
+// hammerCd.setFriction(2500);
 
 // Note: Setting this mass too high will swing the whole player
 // while setting it too low will lower the quality of control
@@ -196,7 +214,7 @@ intermediateCd.setMass(0.001);
 
 function animate() {
   // Execute one step in the Physics world
-  world.step();
+  world.step(eventQueue);
 
   renderObj(playerRb, playerObj);
   renderObj(hammerRb, hammerObj);
@@ -209,17 +227,28 @@ function animate() {
   let angleError = angleCursor - angleActual;
   while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
   while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
-  intermediateRb.setAngvel(angleError * 6, true);
-  // revoluteJoint.configureMotorVelocity(angleError * 30, 300);
+  // intermediateRb.setAngvel(angleError * 15, true);
 
-  console.log(cursorDistance);
+  // revoluteJoint.configureMotorVelocity(angleError, 100000);
+  // console.log(angleCursor);
+  revoluteJoint.configureMotorPosition(angleCursor, 15.0, 0.1);
+  // intermediateRb.setRotation(angleCursor, true);
+
+  // console.log(cursorDistance);
   if (usePrismaticJoint) {
     // Configure the prismatic joint to position the hammer
+
+    // 0 is the furthest point away from the player.
+    // This is why we apply the difference of the cursor's distance and the width of the intermediate body
+    // We must clamp the position of the hammer by ensuring it does not go up to the player's origin.
     prismaticJoint.configureMotorPosition(
-      intermediateW - Math.min(cursorDistance, intermediateW),
+      Math.min(
+        intermediateW - Math.min(cursorDistance, intermediateW),
+        intermediateW - prismaticMinimumLimit
+      ),
       // 0,
-      10000, // Note: If this value is too low, you will notice a spring effect when attempting to land on the hammer
-      10
+      50, // Note: If this value is too low, you will notice a spring effect when attempting to land on the hammer
+      1
     );
   } else {
     // Directly set the anchor of the revolute joint to position the hammer
