@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "@dimforge/rapier2d": "^0.14.0",
+    "@dimforge/rapier2d": "latest",
     "planck": "^1.0.0-alpha.4",
     "three": "^0.152.2",
     "vite-plugin-top-level-await": "^1.4.4",
