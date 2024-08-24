@@ -1,4 +1,4 @@
-import RAPIER from "./node_modules/@dimforge/rapier2d";
+import RAPIER from "@dimforge/rapier2d";
 import * as THREE from "three";
 import WebGL from "three/addons/capabilities/WebGL.js";
 import { renderObj } from "./renderer";
