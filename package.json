@@ -7,6 +7,7 @@
     "vite-plugin-wasm": "^3.3.0"
   },
   "devDependencies": {
+    "@types/three": "^0.167.2",
     "vite": "^4.3.8"
   },
   "scripts": {
