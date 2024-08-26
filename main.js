@@ -1,7 +1,6 @@
 import * as THREE from "three";
 import WebGL from "three/addons/capabilities/WebGL.js";
 import { renderObj } from "./renderer";
-// import RAPIER from "@dimforge/rapier2d";
 import RAPIER from "https://cdn.skypack.dev/@dimforge/rapier2d-compat";
 
 RAPIER.init().then(() => {
