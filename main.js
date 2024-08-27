@@ -96,7 +96,7 @@ RAPIER.init().then(() => {
   // Creating the hammer
   const hammerS = 0.25;
 
-  const hammerGeo = new THREE.BoxGeometry(hammerS, hammerS, 1);
+  const hammerGeo = new THREE.SphereGeometry(hammerS / 2.0);
   const hammerMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
   const hammerObj = new THREE.Mesh(hammerGeo, hammerMat);
   scene.add(hammerObj);
@@ -109,7 +109,7 @@ RAPIER.init().then(() => {
       .setCcdEnabled(true)
   );
   let hammerCd = world.createCollider(
-    RAPIER.ColliderDesc.cuboid(hammerS / 2.0, hammerS / 2.0)
+    RAPIER.ColliderDesc.ball(hammerS / 2.0)
       .setTranslation(0.0, 0.0)
       .setRestitution(0)
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
@@ -122,7 +122,7 @@ RAPIER.init().then(() => {
   // Creating the intermediate object
   let intermediateW = 1.75;
   let intermediateH = 0.125;
-  let prismaticMinimumLimit = 0.25;
+  let prismaticMinimumLimit = 0.3;
 
   const intermediateGeo = new THREE.BoxGeometry(
     intermediateW,
@@ -202,12 +202,12 @@ RAPIER.init().then(() => {
 
   // Note: Increasing the mass will make it more difficult to move the player
   playerCd.setMass(0.01);
-  playerRb.setGravityScale(9);
+  playerRb.setGravityScale(4.5);
 
   // Note: Increasing the mass makes revolutions slower but
   // improves the effect of springing up
   hammerCd.setMass(0.001);
-  // hammerCd.setFriction(2500);
+  hammerCd.setFriction(2500);
 
   // Note: Setting this mass too high will swing the whole player
   // while setting it too low will lower the quality of control
@@ -230,10 +230,21 @@ RAPIER.init().then(() => {
     while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
     // intermediateRb.setAngvel(angleError * 15, true);
 
-    // revoluteJoint.configureMotorVelocity(angleError, 100000);
     // console.log(angleCursor);
-    revoluteJoint.configureMotorPosition(angleCursor, 15.0, 0.1);
+    // revoluteJoint.configureMotorVelocity(angleError, 100000);
+    revoluteJoint.configureMotorPosition(angleCursor, 10.0, 0.85);
     // intermediateRb.setRotation(angleCursor, true);
+
+    console.log(playerRb.linvel());
+    const playerLinvel = playerRb.linvel();
+    const maxPlrLinvel = 25;
+    playerRb.setLinvel(
+      {
+        x: Math.min(maxPlrLinvel, Math.max(-maxPlrLinvel, playerLinvel.x)),
+        y: Math.min(maxPlrLinvel, playerLinvel.y), // We do not want to limit the affect of gravity
+      },
+      true
+    );
 
     // console.log(cursorDistance);
     if (usePrismaticJoint) {
@@ -248,7 +259,7 @@ RAPIER.init().then(() => {
           intermediateW - prismaticMinimumLimit
         ),
         // 0,
-        50, // Note: If this value is too low, you will notice a spring effect when attempting to land on the hammer
+        20, // Note: If this value is too low, you will notice a spring effect when attempting to land on the hammer
         1
       );
     } else {
@@ -260,8 +271,11 @@ RAPIER.init().then(() => {
     }
 
     const playerPos = playerRb.translation();
-    camera.position.x = playerPos.x;
-    camera.position.y = playerPos.y;
+
+    // camera.position.x = playerPos.x;
+    // camera.position.y = playerPos.y;
+    camera.position.x += (playerPos.x - camera.position.x) * 0.15;
+    camera.position.y += (playerPos.y - camera.position.y) * 0.15;
 
     // Render
     renderer.render(scene, camera);
