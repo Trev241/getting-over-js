@@ -7,6 +7,8 @@ let stop = false;
 let frameCount = 0;
 let fps, fpsInterval, startTime, now, then, elapsed;
 
+let mouseTimeout;
+
 RAPIER.init().then(() => {
   const RAD2DEG = 180 / Math.PI;
   const DEG2RAD = Math.PI / 180;
@@ -16,17 +18,16 @@ RAPIER.init().then(() => {
   let cursorDistance;
   let usePrismaticJoint = true;
 
+  const vec = new THREE.Vector3(); // create once and reuse
+  const pos = new THREE.Vector3(); // create once and reuse
+  const lastPos = new THREE.Vector3();
+
   let eventQueue = new RAPIER.EventQueue(true);
   eventQueue.drainCollisionEvents((handle1, handle2, started) => {
     /* Handle the collision event. */
     console.log("Collision detected");
   });
 
-  eventQueue.drainContactForceEvents((event) => {
-    let handle1 = event.collider1(); // Handle of the first collider involved in the event.
-    let handle2 = event.collider2(); // Handle of the second collider involved in the event.
-    /* Handle the contact force event. */
-  });
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(
     75,
@@ -35,9 +36,6 @@ RAPIER.init().then(() => {
     1000
   );
   camera.position.z = 10;
-
-  var vec = new THREE.Vector3(); // create once and reuse
-  var pos = new THREE.Vector3(); // create once and reuse
 
   const renderer = new THREE.WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -231,14 +229,11 @@ RAPIER.init().then(() => {
     let angleError = angleCursor - angleActual;
     while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
     while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
-    // intermediateRb.setAngvel(angleError * 15, true);
 
-    // console.log(angleCursor);
-    // revoluteJoint.configureMotorVelocity(angleError, 100000);
     revoluteJoint.configureMotorPosition(angleCursor, 10.0, 0.85);
-    // intermediateRb.setRotation(angleCursor, true);
 
-    console.log(playerRb.linvel());
+    console.log(lastPos.y - pos.y);
+
     const playerLinvel = playerRb.linvel();
     const maxPlrLinvel = 25;
     playerRb.setLinvel(
@@ -299,6 +294,9 @@ RAPIER.init().then(() => {
   }
 
   window.addEventListener("mousemove", (e) => {
+    clearTimeout(mouseTimeout);
+    mouseTimeout = setTimeout(() => lastPos.copy(pos), fpsInterval);
+
     vec.set(
       (e.clientX / window.innerWidth) * 2 - 1,
       -(e.clientY / window.innerHeight) * 2 + 1,
