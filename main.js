@@ -3,6 +3,10 @@ import WebGL from "three/addons/capabilities/WebGL.js";
 import { renderObj } from "./renderer";
 import RAPIER from "https://cdn.skypack.dev/@dimforge/rapier2d-compat";
 
+let stop = false;
+let frameCount = 0;
+let fps, fpsInterval, startTime, now, then, elapsed;
+
 RAPIER.init().then(() => {
   const RAD2DEG = 180 / Math.PI;
   const DEG2RAD = Math.PI / 180;
@@ -214,14 +218,13 @@ RAPIER.init().then(() => {
   intermediateCd.setMass(0.001);
 
   function animate() {
-    // Execute one step in the Physics world
-    world.step(eventQueue);
+    now = Date.now();
+    elapsed = now - then;
 
-    renderObj(playerRb, playerObj);
-    renderObj(hammerRb, hammerObj);
-    renderObj(groundRb, groundObj);
-    // renderObj(handleRb, handleObj);
-    renderObj(intermediateRb, intermediateObj);
+    const playerPos = playerRb.translation();
+
+    camera.position.x += (playerPos.x - camera.position.x) * 0.15;
+    camera.position.y += (playerPos.y - camera.position.y) * 0.15;
 
     angleActual = intermediateCd.rotation();
     // intermediateRb.setRotation(angleCursor, true);
@@ -246,7 +249,6 @@ RAPIER.init().then(() => {
       true
     );
 
-    // console.log(cursorDistance);
     if (usePrismaticJoint) {
       // Configure the prismatic joint to position the hammer
 
@@ -270,19 +272,26 @@ RAPIER.init().then(() => {
       });
     }
 
-    const playerPos = playerRb.translation();
+    if (elapsed > fpsInterval) {
+      then = now - (elapsed % fpsInterval);
+      world.step(eventQueue);
 
-    // camera.position.x = playerPos.x;
-    // camera.position.y = playerPos.y;
-    camera.position.x += (playerPos.x - camera.position.x) * 0.15;
-    camera.position.y += (playerPos.y - camera.position.y) * 0.15;
+      renderObj(playerRb, playerObj);
+      renderObj(hammerRb, hammerObj);
+      renderObj(groundRb, groundObj);
+      renderObj(intermediateRb, intermediateObj);
 
-    // Render
-    renderer.render(scene, camera);
+      // Render
+      renderer.render(scene, camera);
+    }
   }
 
   if (WebGL.isWebGL2Available()) {
-    // Initiate function or other initializations here
+    fps = 60;
+    fpsInterval = 1000 / fps;
+    then = Date.now();
+    startTime = then;
+
     renderer.setAnimationLoop(animate);
   } else {
     const warning = WebGL.getWebGL2ErrorMessage();
