@@ -1,59 +1,63 @@
-import * as THREE from "three";
-import WebGL from "three/addons/capabilities/WebGL.js";
-import { renderObj } from "./renderer";
 import RAPIER from "https://cdn.skypack.dev/@dimforge/rapier2d-compat";
 
+import * as PIXI from "pixi.js";
+import { Viewport } from "pixi-viewport";
+import { renderObj } from "./renderer";
+
+// FPS vars
 let stop = false;
 let frameCount = 0;
 let fps, fpsInterval, startTime, now, then, elapsed;
 
+const lerpTime = 0.15;
+
+// Mouse properties
+let movementX;
+let movementY;
+let clientX;
+let clientY;
 let mouseTimeout;
+let mousePos = { x: 0, y: 0 };
 
-RAPIER.init().then(() => {
-  const RAD2DEG = 180 / Math.PI;
-  const DEG2RAD = Math.PI / 180;
+RAPIER.init().then(async () => {
+  const app = new PIXI.Application();
+  await app.init({ width: window.innerWidth, height: window.innerHeight });
+  document.body.appendChild(app.canvas);
 
-  let angleCursor;
-  let angleActual;
-  let cursorDistance;
-  let usePrismaticJoint = true;
+  // create viewport
+  const viewport = new Viewport({
+    screenWidth: window.innerWidth,
+    screenHeight: window.innerHeight,
+    worldWidth: 1000,
+    worldHeight: 1000,
 
-  const vec = new THREE.Vector3(); // create once and reuse
-  const pos = new THREE.Vector3(); // create once and reuse
-  const lastPos = new THREE.Vector3();
-
-  let eventQueue = new RAPIER.EventQueue(true);
-  eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-    /* Handle the collision event. */
-    console.log("Collision detected");
+    events: app.renderer.events, // the interaction module is important for wheel to work properly when renderer.view is placed or scaled
   });
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000
-  );
-  camera.position.z = 10;
+  // add the viewport to the stage
+  app.stage.addChild(viewport);
 
-  const renderer = new THREE.WebGLRenderer();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
+  // activate plugins
+  viewport.drag().pinch().wheel().decelerate();
+
+  let angleCursor;
+  let cursorDistance;
+  let hammerConnected;
+  let gravityTimeout;
 
   // Physics Engine
   let world = new RAPIER.World({ x: 0.0, y: -9.81 });
 
   // Creating the ground
-  let groundW = 100;
-  let groundH = 1;
-  let groundX = 0;
-  let groundY = -3;
+  const groundW = 20;
+  const groundH = 1;
+  const groundX = 0;
+  const groundY = -3;
 
-  const groundGeo = new THREE.BoxGeometry(groundW, groundH, 1);
-  const groundMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const groundObj = new THREE.Mesh(groundGeo, groundMat);
-  scene.add(groundObj);
+  const groundSprite = viewport.addChild(new PIXI.Sprite(PIXI.Texture.WHITE));
+  groundSprite.tint = 0xff0000;
+  groundSprite.width = groundW;
+  groundSprite.height = groundH;
 
   let groundRb = world.createRigidBody(
     RAPIER.RigidBodyDesc.fixed()
@@ -73,10 +77,11 @@ RAPIER.init().then(() => {
   const playerW = 0.5;
   const playerH = 1;
 
-  const playerGeo = new THREE.BoxGeometry(playerW, playerH, 1);
-  const playerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-  const playerObj = new THREE.Mesh(playerGeo, playerMat);
-  scene.add(playerObj);
+  const playerSprite = viewport.addChild(new PIXI.Sprite(PIXI.Texture.WHITE));
+  playerSprite.tint = 0xffff00;
+  playerSprite.width = playerW;
+  playerSprite.height = playerH;
+  // playerSprite.anchor.set(0.5);
 
   let playerRb = world.createRigidBody(
     new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
@@ -88,7 +93,6 @@ RAPIER.init().then(() => {
 
   let playerCd = world.createCollider(
     RAPIER.ColliderDesc.cuboid(playerW / 2.0, playerH / 2.0)
-      .setTranslation(0.0, 0.0)
       .setRestitution(0)
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
       .setCollisionGroups(0x00010002),
@@ -98,10 +102,11 @@ RAPIER.init().then(() => {
   // Creating the hammer
   const hammerS = 0.25;
 
-  const hammerGeo = new THREE.SphereGeometry(hammerS / 2.0);
-  const hammerMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-  const hammerObj = new THREE.Mesh(hammerGeo, hammerMat);
-  scene.add(hammerObj);
+  const hammerSprite = viewport.addChild(new PIXI.Sprite(PIXI.Texture.WHITE));
+  hammerSprite.tint = 0x0000ff;
+  hammerSprite.width = hammerS;
+  hammerSprite.height = hammerS;
+  hammerSprite.anchor.set(0.5);
 
   let hammerRb = world.createRigidBody(
     new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
@@ -111,207 +116,194 @@ RAPIER.init().then(() => {
       .setCcdEnabled(true)
   );
   let hammerCd = world.createCollider(
-    RAPIER.ColliderDesc.ball(hammerS / 2.0)
-      .setTranslation(0.0, 0.0)
-      .setRestitution(0)
-      .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+    RAPIER.ColliderDesc.cuboid(hammerS / 2.0, hammerS / 2.0)
       .setCollisionGroups(0x00010002)
       .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
     hammerRb
   );
-  // hammerCd.setFriction(1000);
+
+  const debugSprite = viewport.addChild(new PIXI.Sprite(PIXI.Texture.WHITE));
+  debugSprite.tint = 0x0000ff;
+  debugSprite.width = 1;
+  debugSprite.height = 1;
+  debugSprite.position.set(-20, 0);
 
   // Creating the intermediate object
-  let intermediateW = 1.75;
-  let intermediateH = 0.125;
-  let prismaticMinimumLimit = 0.3;
+  let hammerLength = 1.75;
 
-  const intermediateGeo = new THREE.BoxGeometry(
-    intermediateW,
-    intermediateH,
-    0.25
-  );
-  const intermediateMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-  const intermediateObj = new THREE.Mesh(intermediateGeo, intermediateMat);
-  intermediateObj.position.z = 0.5;
-  scene.add(intermediateObj);
-
-  let intermediateRb = world.createRigidBody(
-    new RAPIER.RigidBodyDesc(RAPIER.RigidBodyType.Dynamic)
-      .setTranslation(0.0, 0.0)
-      .setGravityScale(0)
-      // .setAdditionalMass(500)
-      // .setAngvel(100)
-      .setCanSleep(true)
-      .setCcdEnabled(true)
-  );
-
-  let intermediateCd = world.createCollider(
-    RAPIER.ColliderDesc.cuboid(intermediateW / 2.0, intermediateH / 2.0)
-      .setCollisionGroups(0x00010000)
-      .setTranslation(0.0, 0),
-    intermediateRb
-  );
-
-  // Create a revolute joint
-  let revoluteJoint = world.createImpulseJoint(
-    RAPIER.JointData.revolute(
-      { x: 0.0, y: 0.0 },
-      { x: -intermediateW / 2.0, y: 0.0 }
-    ),
+  let ropeJoint = world.createImpulseJoint(
+    RAPIER.JointData.rope(hammerLength, { x: 0, y: 0 }, { x: 0, y: 0 }),
     playerRb,
-    intermediateRb,
-    true
+    hammerRb
   );
-  revoluteJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
-
-  let prismaticJoint;
-  if (usePrismaticJoint) {
-    // Create the prismatic joint
-    let params = RAPIER.JointData.prismatic(
-      { x: 0.0, y: 0.0 },
-      { x: intermediateW / 2.0, y: 0.0 }, // Note: Setting the anchor to the 2nd body's origin will set it to that the intermediate body's center
-      { x: 1.0, y: 0.0 }
-    );
-    params.limitsEnabled = true;
-    // 0 here represents the farthest it can go,
-    // intermediateW would mean that the hammer is allowed to move up to the player's origin itself
-    // But we take off a small length of it to avoid that to enforce a minimum reach.
-    params.limits = [0, intermediateW - prismaticMinimumLimit]; // Suggestion: Maybe replace hard-coded constant?
-    prismaticJoint = world.createImpulseJoint(
-      params,
-      hammerRb,
-      intermediateRb,
-      true
-    );
-    prismaticJoint.configureMotorModel(RAPIER.MotorModel.ForceBased);
-  } else {
-    // Attach the hammer to the intermediate body
-    let fixedJoint = world.createImpulseJoint(
-      RAPIER.JointData.fixed(
-        { x: 0.0, y: 0.0 },
-        0.0,
-        { x: -(intermediateW / 2.0), y: 0.0 },
-        0
-      ),
-      intermediateRb,
-      hammerRb,
-      true
-    );
-  }
 
   // Tweaking constraints
+  playerCd.setMass(1.0);
+  playerRb.setGravityScale(3.0);
 
-  // Note: Increasing the mass will make it more difficult to move the player
-  playerCd.setMass(0.01);
-  playerRb.setGravityScale(4.5);
-
-  // Note: Increasing the mass makes revolutions slower but
-  // improves the effect of springing up
-  hammerCd.setMass(0.001);
+  /* We do not want the hammer to be too heavy.
+   *  1.  A heavy hammer will drag the player with its mass.
+   *  2.  A heavy hammer requires more force to move.
+   */
+  hammerCd.setMass(1e-1);
   hammerCd.setFriction(2500);
+  hammerRb.lockRotations(true, true);
+  // hammerCd.setRestitution(0);
+  // hammerCd.setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min);
 
-  // Note: Setting this mass too high will swing the whole player
-  // while setting it too low will lower the quality of control
-  intermediateCd.setMass(0.001);
+  /* We do not want a heavy handle for the same reason we do not
+   * want a heavy hammer.
+   */
+  // intermediateCd.setMass(1e-6);
 
-  function animate() {
+  fps = 60;
+  fpsInterval = 1000 / fps;
+  then = Date.now();
+  startTime = then;
+
+  app.ticker.add(() => {
     now = Date.now();
     elapsed = now - then;
 
+    // Make the camera follow the player
     const playerPos = playerRb.translation();
+    // viewport.position.x += (playerPos.x - viewport.position.x) * lerpTime;
+    // viewport.position.y += (playerPos.y - viewport.position.y) * lerpTime;
 
-    camera.position.x += (playerPos.x - camera.position.x) * 0.15;
-    camera.position.y += (playerPos.y - camera.position.y) * 0.15;
+    // Calculate the distance and angle of the cursor with respect to the player
+    cursorDistance = Math.hypot(
+      mousePos.y - playerPos.y,
+      mousePos.x - playerPos.x
+    );
+    angleCursor = Math.atan2(
+      mousePos.y - playerPos.y,
+      mousePos.x - playerPos.x
+    );
 
-    angleActual = intermediateCd.rotation();
-    // intermediateRb.setRotation(angleCursor, true);
-    let angleError = angleCursor - angleActual;
-    while (angleError < -180 * DEG2RAD) angleError += 360 * DEG2RAD;
-    while (angleError > 180 * DEG2RAD) angleError -= 360 * DEG2RAD;
-
-    revoluteJoint.configureMotorPosition(angleCursor, 10.0, 0.85);
-
-    console.log(lastPos.y - pos.y);
+    // Convert the screen coordinates of the mouse into world coordinates
 
     const playerLinvel = playerRb.linvel();
-    const maxPlrLinvel = 25;
+    const maxPlLinvelX = 25;
+    const maxPlLinvelY = 30;
     playerRb.setLinvel(
       {
-        x: Math.min(maxPlrLinvel, Math.max(-maxPlrLinvel, playerLinvel.x)),
-        y: Math.min(maxPlrLinvel, playerLinvel.y), // We do not want to limit the affect of gravity
+        x: Math.min(maxPlLinvelX, Math.max(-maxPlLinvelX, playerLinvel.x)),
+        y: Math.min(maxPlLinvelY, playerLinvel.y), // We do not want to limit the affect of gravity
       },
       true
     );
 
-    if (usePrismaticJoint) {
-      // Configure the prismatic joint to position the hammer
+    const hammerPos = hammerRb.translation();
+    const hammerForceMultiplier = 10.0;
 
-      // 0 is the furthest point away from the player.
-      // This is why we apply the difference of the cursor's distance and the width of the intermediate body
-      // We must clamp the position of the hammer by ensuring it does not go up to the player's origin.
-      prismaticJoint.configureMotorPosition(
-        Math.min(
-          intermediateW - Math.min(cursorDistance, intermediateW),
-          intermediateW - prismaticMinimumLimit
-        ),
-        // 0,
-        20, // Note: If this value is too low, you will notice a spring effect when attempting to land on the hammer
-        1
-      );
-    } else {
-      // Directly set the anchor of the revolute joint to position the hammer
-      revoluteJoint.setAnchor2({
-        x: -Math.min(cursorDistance, intermediateW) / 2.0 + intermediateW / 4.0,
-        y: 0.0,
-      });
+    // Check how far the hammer is allowed to go for a given angle
+    const maximumX = hammerLength * Math.cos(angleCursor) + playerPos.x;
+    const maximumY = hammerLength * Math.sin(angleCursor) + playerPos.y;
+
+    let targetX = mousePos.x;
+    let targetY = mousePos.y;
+
+    if (cursorDistance > hammerLength) {
+      targetX = maximumX;
+      targetY = maximumY;
     }
+
+    console.log(angleCursor);
+
+    const hammerVelX = (targetX - hammerPos.x) * hammerForceMultiplier;
+    const hammerVelY = (targetY - hammerPos.y) * hammerForceMultiplier;
+    hammerRb.setLinvel({ x: hammerVelX, y: hammerVelY }, true);
 
     if (elapsed > fpsInterval) {
       then = now - (elapsed % fpsInterval);
-      world.step(eventQueue);
 
-      renderObj(playerRb, playerObj);
-      renderObj(hammerRb, hammerObj);
-      renderObj(groundRb, groundObj);
-      renderObj(intermediateRb, intermediateObj);
+      let eventQueue = new RAPIER.EventQueue(true);
+      world.step(eventQueue);
+      eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+        if (hammerRb.handle == handle2) {
+          hammerConnected = started;
+
+          if (started) {
+            /* Turn off gravity and cancel all downward vertical movement when the hammer is grounded.
+             * This will prevent the hammer from clipping into ground and makes movement
+             * more consistent and predictable.
+             */
+            clearTimeout(gravityTimeout);
+            playerRb.setGravityScale(0);
+            hammerCd.setMass(10.0);
+
+            let playerLinvel = playerRb.linvel();
+            // playerRb.setLinvel({ x: 0, y: Math.max(0, playerLinvel.y) }, true);
+          } else {
+            // Reset gravity after a delay
+            gravityTimeout = setTimeout(
+              () => playerRb.setGravityScale(3.0),
+              fpsInterval
+            );
+            hammerCd.setMass(1e-1);
+          }
+        }
+      });
+
+      if (hammerConnected) {
+        /* Using the difference between the mouse's last world position
+         * and its current position is not a good method. This is because
+         * the camera is constantly following the player which means even
+         * a stationery mouse will still report a difference owing to the
+         * camera's movement.
+         */
+
+        const hammerPos = hammerRb.translation();
+        const playerPos = playerRb.translation();
+
+        const factorX = 1.0;
+        const factorY = 1.0;
+        let forceX = 0;
+
+        // if (
+        //   (hammerPos.x > playerPos.x && movementX < 0) ||
+        //   (hammerPos.x < playerPos.x && movementX > 0)
+        // )
+        forceX = -movementX * factorX;
+
+        if (movementY > 15.0) hammerCd.setMass(1e-1);
+
+        // playerRb.applyImpulse(
+        //   { x: forceX, y: Math.max(0, movementY * factorY) },
+        //   true
+        // );
+        playerRb.setLinvel({ x: forceX, y: movementY * factorY });
+      }
+
+      renderObj(playerRb, playerSprite);
+      renderObj(hammerRb, hammerSprite, true);
+      renderObj(groundRb, groundSprite);
+      // renderObj(intermediateRb, intermediateObj);
 
       // Render
-      renderer.render(scene, camera);
+      // renderer.render(scene, camera);
     }
-  }
+  });
 
-  if (WebGL.isWebGL2Available()) {
-    fps = 60;
-    fpsInterval = 1000 / fps;
-    then = Date.now();
-    startTime = then;
+  viewport.addEventListener("mousemove", (e) => {
+    // The mouse's world position MUST BE UPDATED EVERY FRAME.
+    // As it stands, the mouse position is only updated when the mouse is moved.
+    // If the camera moves, the mouse's world position and screen position will
+    // NOT ALIGN leading to an inconsistency.
 
-    renderer.setAnimationLoop(animate);
-  } else {
-    const warning = WebGL.getWebGL2ErrorMessage();
-    document.getElementById("container").appendChild(warning);
-  }
-
-  window.addEventListener("mousemove", (e) => {
     clearTimeout(mouseTimeout);
-    mouseTimeout = setTimeout(() => lastPos.copy(pos), fpsInterval);
+    mouseTimeout = setTimeout(() => {
+      movementX = 0;
+      movementY = 0;
+    }, fpsInterval);
 
-    vec.set(
-      (e.clientX / window.innerWidth) * 2 - 1,
-      -(e.clientY / window.innerHeight) * 2 + 1,
-      0.5
-    );
+    movementX = e.movementX;
+    movementY = e.movementY;
+    clientX = e.clientX;
+    clientY = e.clientY;
 
-    vec.unproject(camera);
-    vec.sub(camera.position).normalize();
-    var distance = -camera.position.z / vec.z;
-    pos.copy(camera.position).add(vec.multiplyScalar(distance));
-
-    const playerPos = playerRb.translation();
-    const hammerPos = hammerRb.translation();
-
-    cursorDistance = Math.hypot(pos.y - playerPos.y, pos.x - playerPos.x);
-    angleCursor = Math.atan2(pos.y - playerPos.y, pos.x - playerPos.x);
+    // World space coordinates depend on the viewport's current transform and scale
+    mousePos.x = (clientX - viewport.x) / viewport.scale.x;
+    mousePos.y = (viewport.y - clientY) / viewport.scale.y;
   });
 });

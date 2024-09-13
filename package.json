@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "@dimforge/rapier2d": "latest",
+    "pixi-viewport": "^5.0.3",
+    "pixi.js": "^8.3.4",
     "planck": "^1.0.0-alpha.4",
     "three": "^0.152.2",
     "vite-plugin-top-level-await": "^1.4.4",
