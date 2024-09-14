@@ -9,7 +9,8 @@ let stop = false;
 let frameCount = 0;
 let fps, fpsInterval, startTime, now, then, elapsed;
 
-const lerpTime = 0.15;
+const lerpTime = 0.1;
+const RENDER_SCALE_FACTOR = 150;
 
 // Mouse properties
 let movementX;
@@ -39,6 +40,9 @@ RAPIER.init().then(async () => {
 
   // activate plugins
   viewport.drag().pinch().wheel().decelerate();
+
+  // Set viewport scale
+  viewport.scale.set(50, 50);
 
   let angleCursor;
   let cursorDistance;
@@ -145,7 +149,8 @@ RAPIER.init().then(async () => {
    *  1.  A heavy hammer will drag the player with its mass.
    *  2.  A heavy hammer requires more force to move.
    */
-  hammerCd.setMass(1e-1);
+  const hammerMass = 1e-1;
+  hammerCd.setMass(hammerMass);
   hammerCd.setFriction(2500);
   hammerRb.lockRotations(true, true);
   // hammerCd.setRestitution(0);
@@ -167,8 +172,13 @@ RAPIER.init().then(async () => {
 
     // Make the camera follow the player
     const playerPos = playerRb.translation();
-    // viewport.position.x += (playerPos.x - viewport.position.x) * lerpTime;
-    // viewport.position.y += (playerPos.y - viewport.position.y) * lerpTime;
+    // let viewportTargetX = viewport.width / 2.0 - playerPos.x * viewport.scale.x;
+    // let viewportTargetY = playerPos.y * viewport.scale.y;
+
+    // viewport.position.x += (viewportTargetX - viewport.position.x) * lerpTime;
+    // viewport.position.y = viewportTargetY;
+
+    viewport.follow(playerSprite, { speed: 0.25 });
 
     // Calculate the distance and angle of the cursor with respect to the player
     cursorDistance = Math.hypot(
@@ -183,8 +193,8 @@ RAPIER.init().then(async () => {
     // Convert the screen coordinates of the mouse into world coordinates
 
     const playerLinvel = playerRb.linvel();
-    const maxPlLinvelX = 25;
-    const maxPlLinvelY = 30;
+    const maxPlLinvelX = 20;
+    const maxPlLinvelY = 25;
     playerRb.setLinvel(
       {
         x: Math.min(maxPlLinvelX, Math.max(-maxPlLinvelX, playerLinvel.x)),
@@ -208,8 +218,6 @@ RAPIER.init().then(async () => {
       targetY = maximumY;
     }
 
-    console.log(angleCursor);
-
     const hammerVelX = (targetX - hammerPos.x) * hammerForceMultiplier;
     const hammerVelY = (targetY - hammerPos.y) * hammerForceMultiplier;
     hammerRb.setLinvel({ x: hammerVelX, y: hammerVelY }, true);
@@ -230,17 +238,14 @@ RAPIER.init().then(async () => {
              */
             clearTimeout(gravityTimeout);
             playerRb.setGravityScale(0);
-            hammerCd.setMass(10.0);
-
-            let playerLinvel = playerRb.linvel();
-            // playerRb.setLinvel({ x: 0, y: Math.max(0, playerLinvel.y) }, true);
+            hammerCd.setMass(5.0);
           } else {
             // Reset gravity after a delay
             gravityTimeout = setTimeout(
               () => playerRb.setGravityScale(3.0),
               fpsInterval
             );
-            hammerCd.setMass(1e-1);
+            hammerCd.setMass(hammerMass);
           }
         }
       });
@@ -256,8 +261,8 @@ RAPIER.init().then(async () => {
         const hammerPos = hammerRb.translation();
         const playerPos = playerRb.translation();
 
-        const factorX = 1.0;
-        const factorY = 1.0;
+        const factorX = 2.0;
+        const factorY = 2.0;
         let forceX = 0;
 
         // if (
@@ -266,7 +271,7 @@ RAPIER.init().then(async () => {
         // )
         forceX = -movementX * factorX;
 
-        if (movementY > 15.0) hammerCd.setMass(1e-1);
+        if (movementY > 12.5) hammerCd.setMass(hammerMass);
 
         // playerRb.applyImpulse(
         //   { x: forceX, y: Math.max(0, movementY * factorY) },
