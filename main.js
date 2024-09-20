@@ -42,7 +42,7 @@ RAPIER.init().then(async () => {
   viewport.drag().pinch().wheel().decelerate();
 
   // Set viewport scale
-  viewport.scale.set(50, 50);
+  viewport.scale.set(75, 75);
 
   let angleCursor;
   let cursorDistance;
@@ -142,14 +142,15 @@ RAPIER.init().then(async () => {
   );
 
   // Tweaking constraints
+  const playerGravity = 7.5;
   playerCd.setMass(1.0);
-  playerRb.setGravityScale(3.0);
+  playerRb.setGravityScale(playerGravity);
 
   /* We do not want the hammer to be too heavy.
    *  1.  A heavy hammer will drag the player with its mass.
    *  2.  A heavy hammer requires more force to move.
    */
-  const hammerMass = 1e-1;
+  const hammerMass = 1e-5;
   hammerCd.setMass(hammerMass);
   hammerCd.setFriction(2500);
   hammerRb.lockRotations(true, true);
@@ -193,8 +194,8 @@ RAPIER.init().then(async () => {
     // Convert the screen coordinates of the mouse into world coordinates
 
     const playerLinvel = playerRb.linvel();
-    const maxPlLinvelX = 20;
-    const maxPlLinvelY = 25;
+    const maxPlLinvelX = 15.0;
+    const maxPlLinvelY = 17.5;
     playerRb.setLinvel(
       {
         x: Math.min(maxPlLinvelX, Math.max(-maxPlLinvelX, playerLinvel.x)),
@@ -242,7 +243,7 @@ RAPIER.init().then(async () => {
           } else {
             // Reset gravity after a delay
             gravityTimeout = setTimeout(
-              () => playerRb.setGravityScale(3.0),
+              () => playerRb.setGravityScale(playerGravity),
               fpsInterval
             );
             hammerCd.setMass(hammerMass);
@@ -258,17 +259,10 @@ RAPIER.init().then(async () => {
          * camera's movement.
          */
 
-        const hammerPos = hammerRb.translation();
-        const playerPos = playerRb.translation();
-
-        const factorX = 2.0;
-        const factorY = 2.0;
+        const factorX = 1.75;
+        const factorY = 1.75;
         let forceX = 0;
 
-        // if (
-        //   (hammerPos.x > playerPos.x && movementX < 0) ||
-        //   (hammerPos.x < playerPos.x && movementX > 0)
-        // )
         forceX = -movementX * factorX;
 
         if (movementY > 12.5) hammerCd.setMass(hammerMass);
